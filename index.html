@@ -13,7 +13,7 @@
             font-family: 'Inter', sans-serif;
             background-color: #1f2937; /* Dark Slate Gray */
             color: #d1d5db; /* Light Gray */
-            overflow-x: hidden; /* Prevent horizontal scroll for the cube effect */
+            overflow-x: hidden;
             position: relative;
         }
         .cinzel {
@@ -72,31 +72,36 @@
             box-shadow: 0 0 0 1px #f59e0b;
         }
 
-        /* Minimalist 3D Cube Background */
+        /* --- WONKY BACKGROUND STYLES --- */
         .cube-background {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            z-index: -1; /* Send it to the back */
+            z-index: -1;
             overflow: hidden;
-            background-color: #0d1117; /* Dark background for minimalist feel */
+            background-color: #0d1117;
         }
-        .cube {
+        
+        .shape {
             position: absolute;
-            width: 50px; /* Smaller cubes for minimalism */
-            height: 50px;
             transform-style: preserve-3d;
-            animation: floatAndRotate 20s infinite ease-in-out; /* Slower, smoother animation */
-            opacity: 0.1; /* Very subtle */
+            opacity: 0.07; /* Very subtle opacity */
+        }
+        
+        /* CUBE Styles */
+        .cube {
+            width: 50px;
+            height: 50px;
+            animation: floatAndRotate 20s infinite ease-in-out;
         }
         .cube-face {
             position: absolute;
             width: 100%;
             height: 100%;
-            background-color: rgba(255, 255, 255, 0.03); /* White faces, very transparent */
-            border: 1px solid rgba(255, 255, 255, 0.05); /* Subtle white border */
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
         }
         .cube-face.front  { transform: rotateY(0deg) translateZ(25px); }
         .cube-face.back   { transform: rotateX(180deg) translateZ(25px); }
@@ -105,12 +110,48 @@
         .cube-face.top    { transform: rotateX(90deg) translateZ(25px); }
         .cube-face.bottom { transform: rotateX(-90deg) translateZ(25px); }
 
+        /* TRIANGLE Styles */
+        .triangle {
+            width: 0;
+            height: 0;
+            border-left: 50px solid transparent;
+            border-right: 50px solid transparent;
+            border-bottom: 86.6px solid rgba(168, 85, 247, 0.05); /* Fuchsia/Purple */
+            animation: wonkyTriangle 15s infinite linear;
+            filter: blur(1px);
+        }
+        
+        /* CIRCLE/SWIRL Styles */
+        .swirl {
+            width: 70px;
+            height: 70px;
+            background: transparent;
+            border: 5px solid;
+            border-color: rgba(245, 158, 11, 0.05) transparent rgba(245, 158, 11, 0.05) transparent; /* Amber */
+            border-radius: 50%;
+            animation: swirlRotate 25s infinite linear;
+        }
+
+        /* KEYFRAMES */
         @keyframes floatAndRotate {
             0% { transform: translate(0, 0) rotateX(0deg) rotateY(0deg); }
             25% { transform: translate(10vw, 5vw) rotateX(90deg) rotateY(45deg); }
             50% { transform: translate(0, 10vw) rotateX(180deg) rotateY(90deg); }
             75% { transform: translate(-10vw, 5vw) rotateX(270deg) rotateY(135deg); }
             100% { transform: translate(0, 0) rotateX(360deg) rotateY(180deg); }
+        }
+
+        @keyframes wonkyTriangle {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(20vw, 15vh) rotate(120deg) scale(0.8); }
+            66% { transform: translate(5vw, 30vh) rotate(240deg) scale(1.1); }
+            100% { transform: translate(0, 0) rotate(360deg); }
+        }
+        
+        @keyframes swirlRotate {
+            0% { transform: rotate(0deg) scale(1); }
+            50% { transform: rotate(180deg) scale(0.9); }
+            100% { transform: rotate(360deg) scale(1); }
         }
         
         /* Ensure content is above the background */
@@ -431,11 +472,11 @@
             if (!p1 || !p2 || p1Id === p2Id) {
                 return showNotification("Select two unique players for the battle!", 'bg-red-600');
             }
-            // Add a check to ensure one of the players is the local player to prevent unauthorized action
-            if (p1Id !== localPlayerId && p2Id !== localPlayerId) {
-                return showNotification("You must be one of the combatants to initiate a battle!", 'bg-red-600');
-            }
-
+            // FIX: Removed the check that forced the local player to be involved. 
+            // Now any player can initiate any battle for true multiplayer functionality.
+            // if (p1Id !== localPlayerId && p2Id !== localPlayerId) {
+            //     return showNotification("You must be one of the combatants to initiate a battle!", 'bg-red-600');
+            // }
 
             let diff = p1.techLevel - p2.techLevel;
             let baseOdd = 50;
@@ -498,14 +539,14 @@
             const t1Ids = [t1p1?.id, t1p2?.id].filter(Boolean);
             const t2Ids = [t2p1?.id, t2p2?.id].filter(Boolean);
             const allIds = [...t1Ids, ...t2Ids];
-            const localPlayerInvolved = allIds.includes(localPlayerId);
+            // const localPlayerInvolved = allIds.includes(localPlayerId); // Removed for MP functionality
 
             if (!t1p1 || !t2p1) { 
                 return showNotification("Select at least P1 for Team 1 and P1 for Team 2!", 'bg-red-600');
             }
-            if (!localPlayerInvolved) {
-                return showNotification("You must be part of one of the teams to initiate a battle!", 'bg-red-600');
-            }
+            // if (!localPlayerInvolved) {
+            //     return showNotification("You must be part of one of the teams to initiate a battle!", 'bg-red-600');
+            // }
 
             let t1Level = (t1p1 ? t1p1.techLevel : 0) + (t1p2 ? t1p2.techLevel : 0);
             let t2Level = (t2p1 ? t2p1.techLevel : 0) + (t2p2 ? t2p2.techLevel : 0);
@@ -560,9 +601,12 @@
             // Determine names for display
             let team1Name = isDuo ? 'Team 1 (Blue)' : 'P1';
             let team2Name = isDuo ? 'Team 2 (Red)' : 'P2';
+            const p1Select = document.getElementById('p1Select');
+            const p2Select = document.getElementById('p2Select');
+
             if (!isDuo) {
-                 const p1 = window.findPlayerById(document.getElementById('p1Select').value);
-                 const p2 = window.findPlayerById(document.getElementById('p2Select').value);
+                 const p1 = window.findPlayerById(p1Select.value);
+                 const p2 = window.findPlayerById(p2Select.value);
                  if (p1) team1Name = p1.name;
                  if (p2) team2Name = p2.name;
             }
@@ -579,22 +623,21 @@
             resultDisplay.innerText = 'Flipping...';
 
             setTimeout(() => {
-                let winnerText = isDuo 
-                    ? (newState.winner === 't1' ? team1Name : team2Name)
-                    : (newState.winner === document.getElementById('p1Select').value ? team1Name : team2Name);
-                
-                // If the player selects change after the flip, this fallback ensures a name is shown.
-                if (!winnerText || winnerText === 'P1' || winnerText === 'P2' || winnerText === 'Team 1 (Blue)' || winnerText === 'Team 2 (Red)') {
-                     winnerText = (newState.winner === document.getElementById('p1Select').value) ? team1Name : team2Name;
+                // Determine winner's name correctly based on the current state and selection
+                let winnerText;
+                if (isDuo) {
+                    winnerText = (newState.winner === 't1') ? 'Team 1 (Blue)' : 'Team 2 (Red)';
+                } else {
+                    winnerText = (newState.winner === p1Select.value) ? team1Name : team2Name;
                 }
                 
                 resultDisplay.innerHTML = `<span class="text-xl font-bold ${newState.result === 'heads' ? 'text-green-400' : 'text-red-400'}">${winnerText} WINS!</span><br><span class="text-sm text-slate-400">(${newState.result})</span>`;
                 showNotification(`${winnerText} won the battle!`, newState.result === 'heads' ? 'bg-green-600' : 'bg-red-600');
 
-                // Apply energy loss/gain
-                if (!isDuo) {
+                // Apply energy loss/gain only for 1v1
+                if (!isDuo && p1Select.value && p2Select.value) {
                     const winnerId = newState.winner;
-                    const loserId = (winnerId === p1.id) ? p2.id : p1.id;
+                    const loserId = (winnerId === p1Select.value) ? p2Select.value : p1Select.value;
                     window.applyEnergyChange(winnerId, 1);
                     window.applyEnergyChange(loserId, -1);
                 }
@@ -763,26 +806,35 @@
         // Populate the cube background
         document.addEventListener('DOMContentLoaded', () => {
             const background = document.querySelector('.cube-background');
-            const numCubes = 30; // Number of cubes for the minimalist effect
-            for (let i = 0; i < numCubes; i++) {
-                const cube = document.createElement('div');
-                cube.className = 'cube';
-                cube.style.left = `${Math.random() * 100}vw`;
-                cube.style.top = `${Math.random() * 100}vh`;
-                cube.style.animationDelay = `-${Math.random() * 20}s`; // Stagger start times
-                cube.style.transform = `translateZ(-${Math.random() * 500}px) rotateX(${Math.random() * 360}deg) rotateY(${Math.random() * 360}deg)`;
+            const cubeCount = 15; // Fewer cubes
+            const triangleCount = 10;
+            const swirlCount = 10;
 
-                // Add 6 faces
-                const faces = ['front', 'back', 'right', 'left', 'top', 'bottom'];
-                faces.forEach(faceName => {
-                    const face = document.createElement('div');
-                    face.className = `cube-face ${faceName}`;
-                    cube.appendChild(face);
-                });
-
-                background.appendChild(cube);
-            }
+            const createShape = (type, count, className) => {
+                for (let i = 0; i < count; i++) {
+                    const shape = document.createElement('div');
+                    shape.className = `shape ${type} ${className}`;
+                    shape.style.left = `${Math.random() * 100}vw`;
+                    shape.style.top = `${Math.random() * 100}vh`;
+                    shape.style.animationDelay = `-${Math.random() * 20}s`;
+                    
+                    if (type === 'cube') {
+                        shape.style.transform = `translateZ(-${Math.random() * 500}px) rotateX(${Math.random() * 360}deg) rotateY(${Math.random() * 360}deg)`;
+                        const faces = ['front', 'back', 'right', 'left', 'top', 'bottom'];
+                        faces.forEach(faceName => {
+                            const face = document.createElement('div');
+                            face.className = `cube-face ${faceName}`;
+                            shape.appendChild(face);
+                        });
+                    }
+                    background.appendChild(shape);
+                }
+            };
             
+            createShape('cube', cubeCount);
+            createShape('triangle', triangleCount);
+            createShape('swirl', swirlCount);
+
             // Display User ID once auth is ready
             const localUserIdDisplay = document.getElementById('localUserIdDisplay');
             if (localUserIdDisplay) {
