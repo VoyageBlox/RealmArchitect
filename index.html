@@ -15,19 +15,19 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- FIREBASE SETUP ---
-        // Provide dummy config and token if running outside the Canvas environment
-        const DEFAULT_FIREBASE_CONFIG = { apiKey: "local-dummy-key", authDomain: "local-dummy.firebaseapp.com", projectId: "local-dummy-project" };
+        // --- FIREBASE SETUP & GLOBALS ---
+        const DUMMY_KEY = "local-dummy-key";
+        const DEFAULT_FIREBASE_CONFIG = { apiKey: DUMMY_KEY, authDomain: "local-dummy.firebaseapp.com", projectId: "local-dummy-project" };
+        
         const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
         const finalConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : DEFAULT_FIREBASE_CONFIG;
-
-        const app = initializeApp(finalConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = window.__app_id || 'default-app';
-        setLogLevel('debug'); // Enable detailed logging
-
+        
+        const isAppRunningLocallyWithDummyConfig = finalConfig.apiKey === DUMMY_KEY;
+        
+        let app, auth, db, appId;
         let currentUser = null;
+        let localPlayerId = null; // The unique ID for the current player (UID or UUID)
+        let localPlayerName = ''; // The display name for the current player
         let currentRealmId = null;
         let unsubscribe = null;
 
@@ -35,100 +35,178 @@
         let players = [];
         let battleState = { p1: 0, p2: 0, lastBattleId: 0, result: null, winner: null };
         let duoBattleState = { t1: 0, t2: 0, lastBattleId: 0, result: null, winner: null };
+        
+        // Expose players globally for read access by render functions
+        window.players = players; 
+
+        try {
+            app = initializeApp(finalConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+            appId = window.__app_id || 'default-app';
+            setLogLevel('debug'); 
+        } catch (e) {
+             console.error("Failed to initialize Firebase:", e);
+        }
 
         // --- AUTH & LOBBY ---
         async function initAuth() {
+            document.getElementById('loadingAuth').classList.remove('hidden');
+            
+            if (isAppRunningLocallyWithDummyConfig || !auth) {
+                console.warn("Running in local/fallback mode. Firebase sync is disabled.");
+                localPlayerId = crypto.randomUUID(); // Set a persistent ID for local testing
+                document.getElementById('lobbyScreen').classList.remove('hidden');
+                document.getElementById('loadingAuth').classList.add('hidden');
+                document.getElementById('localModeWarning').classList.remove('hidden');
+                return;
+            }
+
             try {
                 if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token.length > 0) {
                     await signInWithCustomToken(auth, window.__initial_auth_token);
                 } else {
-                    // Fallback to anonymous sign-in if the custom token is unavailable (e.g., running locally)
                     await signInAnonymously(auth);
                 }
             } catch (error) {
-                // If anonymous sign-in also fails (due to invalid API key/config outside Canvas),
-                // we fall back to a "local-only" mode which will fail on Firestore ops but load UI.
-                console.error("Firebase Auth failed (expected if running locally):", error.code, error.message);
+                console.error("Firebase Auth failed:", error.code, error.message);
                 document.getElementById('lobbyScreen').classList.remove('hidden');
                 document.getElementById('loadingAuth').classList.add('hidden');
+                document.getElementById('authFailureWarning').classList.remove('hidden');
             }
         }
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 currentUser = user;
+                localPlayerId = user.uid; // Use UID as the unique player ID
                 document.getElementById('lobbyScreen').classList.remove('hidden');
                 document.getElementById('loadingAuth').classList.add('hidden');
+            } else if (!isAppRunningLocallyWithDummyConfig) {
+                 document.getElementById('lobbyScreen').classList.remove('hidden');
+                 document.getElementById('loadingAuth').classList.add('hidden');
+                 document.getElementById('authFailureWarning').classList.remove('hidden');
             }
         });
 
         window.joinRealm = async () => {
             const code = document.getElementById('realmCodeInput').value.trim().toUpperCase();
-            if (!code) return alert("Enter a Realm Code!");
+            const name = document.getElementById('playerNameInput').value.trim();
             
+            if (!code) return showNotification("Enter a Realm Code!", 'bg-red-600');
+            if (!name) return showNotification("Enter your Player Name!", 'bg-red-600');
+            
+            localPlayerName = name;
             currentRealmId = code;
+            
             document.getElementById('lobbyScreen').classList.add('hidden');
             document.getElementById('appScreen').classList.remove('hidden');
-            document.getElementById('realmDisplay').innerText = `Realm: ${code}`;
+            document.getElementById('realmDisplay').innerText = `Realm: ${code} | Player: ${localPlayerName}`;
             
-            setupRealtimeListener();
+            if (localPlayerId) {
+                setupRealtimeListener();
+            } else {
+                showNotification("Cannot connect. Authentication is not ready.", 'bg-red-800');
+            }
         };
 
         // --- REALTIME DATABASE LISTENER ---
         function setupRealtimeListener() {
-            if (!currentUser || !currentRealmId) return;
+            if (isAppRunningLocallyWithDummyConfig) {
+                 console.log("Local mode active. Skipping Firestore subscription.");
+                 document.getElementById('realmDisplay').innerText = `Realm: ${currentRealmId} (Local Only)`;
+                 return;
+            }
 
-            // Path: artifacts/{appId}/public/data/realms/{realmId}
+            if (!localPlayerId || !currentRealmId || !db || !appId) {
+                 console.error("Cannot set up listener: Missing credentials or database instance.");
+                 return;
+            }
+
             const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
 
             unsubscribe = onSnapshot(realmRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
+                let data = docSnap.exists() ? docSnap.data() : {};
+                let localPlayers = data.players || [];
+                
+                // 1. Ensure the current player exists in the realm list
+                let currentPlayer = localPlayers.find(p => p.id === localPlayerId);
+                if (!currentPlayer) {
+                    currentPlayer = {
+                        id: localPlayerId,
+                        name: localPlayerName,
+                        energy: 10,
+                        techLevel: 0,
+                        inventory: [],
+                        lastUpdate: Date.now(),
+                        worldData: null
+                    };
+                    localPlayers.push(currentPlayer);
                     
-                    // Sync Players
-                    players = data.players || [];
-                    renderPlayers();
-                    updateSelects();
-
-                    // Sync 1v1 Battle
-                    if (data.battleState) {
-                        if (data.battleState.lastBattleId !== battleState.lastBattleId) {
-                            triggerBattleAnimation(data.battleState, 'coin', 'battleResult');
-                        }
-                        battleState = data.battleState;
-                        document.getElementById('p1Score').innerText = battleState.p1;
-                        document.getElementById('p2Score').innerText = battleState.p2;
+                    // Save the updated list back immediately to create the entry
+                    window.saveToDb(localPlayers, data.battleState, data.duoBattleState, true);
+                    return; // Wait for the new snapshot with the new player
+                }
+                
+                // 2. Sync Global State
+                window.players = localPlayers; // Update the global variable
+                
+                // Sync 1v1 Battle
+                if (data.battleState) {
+                    if (data.battleState.lastBattleId !== battleState.lastBattleId) {
+                        triggerBattleAnimation(data.battleState, 'coin', 'battleResult');
                     }
-
-                    // Sync 2v2 Battle
-                    if (data.duoBattleState) {
-                        if (data.duoBattleState.lastBattleId !== duoBattleState.lastBattleId) {
-                            triggerBattleAnimation(data.duoBattleState, 'duoCoin', 'duoBattleResult', true);
-                        }
-                        duoBattleState = data.duoBattleState;
-                        document.getElementById('t1Score').innerText = duoBattleState.t1;
-                        document.getElementById('t2Score').innerText = duoBattleState.t2;
-                    }
-
+                    battleState = data.battleState;
+                    document.getElementById('p1Score').innerText = battleState.p1;
+                    document.getElementById('p2Score').innerText = battleState.p2;
                 } else {
-                    // Create new realm if doesn't exist
+                    battleState = { p1: 0, p2: 0, lastBattleId: 0, result: null, winner: null };
+                }
+
+                // Sync 2v2 Battle
+                if (data.duoBattleState) {
+                    if (data.duoBattleState.lastBattleId !== duoBattleState.lastBattleId) {
+                        triggerBattleAnimation(data.duoBattleState, 'duoCoin', 'duoBattleResult', true);
+                    }
+                    duoBattleState = data.duoBattleState;
+                    document.getElementById('t1Score').innerText = duoBattleState.t1;
+                    document.getElementById('t2Score').innerText = duoBattleState.t2;
+                } else {
+                    duoBattleState = { t1: 0, t2: 0, lastBattleId: 0, result: null, winner: null };
+                }
+
+                // 3. Render UI based on new state
+                window.renderPlayers();
+                window.updateSelects();
+
+                if (!docSnap.exists()) {
+                    // Create new realm if doesn't exist (initial save)
                     setDoc(realmRef, {
-                        players: [],
-                        battleState: { p1: 0, p2: 0, lastBattleId: 0, result: null, winner: null },
-                        duoBattleState: { t1: 0, t2: 0, lastBattleId: 0, result: null, winner: null },
+                        players: localPlayers,
+                        battleState: battleState,
+                        duoBattleState: duoBattleState,
                         createdAt: Date.now()
-                    }).catch(e => console.error("Error setting initial document (expected locally):", e));
+                    }).catch(e => console.error("Error setting initial document:", e));
                 }
             }, (error) => {
                 console.error("Sync Error:", error);
-                // Display non-functional status if sync fails
-                document.getElementById('realmDisplay').innerText = `Realm: ${currentRealmId} (Sync Failed)`;
+                document.getElementById('realmDisplay').innerText = `Realm: ${currentRealmId} (Sync Failed!)`;
             });
         }
 
         // --- SYNC ACTIONS ---
-        window.saveToDb = async (newPlayers, newBattleState = null, newDuoBattleState = null) => {
-            if (!currentRealmId) return;
+        window.saveToDb = async (newPlayers, newBattleState = null, newDuoBattleState = null, initialCreate = false) => {
+            if (isAppRunningLocallyWithDummyConfig) {
+                window.players = newPlayers;
+                if (newBattleState) battleState = newBattleState;
+                if (newDuoBattleState) duoBattleState = newDuoBattleState;
+                window.renderPlayers();
+                window.updateSelects();
+                return;
+            }
+
+            if (!currentRealmId || !db || !appId) return;
+
             const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
             
             const updateData = { players: newPlayers };
@@ -136,15 +214,18 @@
             if (newDuoBattleState) updateData.duoBattleState = newDuoBattleState;
 
             try {
-                await updateDoc(realmRef, updateData);
+                if (initialCreate) {
+                     // Use setDoc to ensure the whole document exists if it was just created
+                     await setDoc(realmRef, updateData, { merge: true });
+                } else {
+                     await updateDoc(realmRef, updateData);
+                }
             } catch (e) {
-                console.error("Save failed (expected locally):", e);
+                console.error("Save failed:", e);
+                showNotification("Save failed. Check console for error.", 'bg-red-800');
             }
         };
 
-        // --- EXPORT GLOBALS FOR HTML ACCESS ---
-        window.players = players; // For read access
-        
         initAuth();
     </script>
 
@@ -166,9 +247,22 @@
     <!-- LOBBY SCREEN -->
     <div id="lobbyScreen" class="fixed inset-0 z-50 bg-slate-900 flex flex-col items-center justify-center hidden">
         <div class="bg-slate-800 p-8 rounded-xl border-2 border-yellow-500 shadow-2xl max-w-md w-full text-center">
+            
+            <!-- WARNING MESSAGE FOR LOCAL MODE / AUTH FAILURE -->
+            <div id="localModeWarning" class="hidden bg-red-900/50 text-red-300 p-3 rounded-lg mb-4 border border-red-700">
+                <i class="fa-solid fa-cloud-exclamation mr-2"></i> Sync Disabled (Running with Fallback Config)
+            </div>
+            <div id="authFailureWarning" class="hidden bg-red-900/50 text-red-300 p-3 rounded-lg mb-4 border border-red-700">
+                <i class="fa-solid fa-ban mr-2"></i> Authentication Failed. Multiplayer Sync is Disabled.
+            </div>
+            <!-- END WARNING -->
+
             <i class="fa-solid fa-dragon text-yellow-500 text-6xl mb-4 animate-pulse"></i>
             <h1 class="text-3xl font-bold text-white mb-2 fantasy-font">Realm Architect</h1>
             <p class="text-slate-400 mb-6">Multiplayer Edition</p>
+
+            <input type="text" id="playerNameInput" placeholder="Enter Your Player Name" 
+                   class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-center text-lg mb-4 font-bold focus:ring-2 focus:ring-indigo-500 outline-none">
             
             <input type="text" id="realmCodeInput" placeholder="Enter Realm Name (e.g. WARZONE)" 
                    class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-center text-lg mb-4 uppercase font-bold tracking-widest focus:ring-2 focus:ring-yellow-500 outline-none">
@@ -249,12 +343,9 @@
                         </div>
 
                         <div class="bg-indigo-900/40 p-5 rounded-lg border border-indigo-500/50">
-                            <h3 class="text-lg font-bold text-white mb-2"><i class="fa-solid fa-floppy-disk mr-2"></i>Save Country to Player</h3>
-                            <div class="flex gap-2">
-                                 <input type="text" id="architectName" placeholder="Enter Player Name" class="flex-grow bg-slate-900 border border-slate-600 rounded-md p-2.5 text-white">
-                                 <button type="button" onclick="saveWorldToPlayer()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 rounded-md shadow-lg transition-colors">Save</button>
-                            </div>
-                            <p class="text-xs text-slate-400 mt-2">Syncs world data to the multiplayer database.</p>
+                            <h3 class="text-lg font-bold text-white mb-2"><i class="fa-solid fa-floppy-disk mr-2"></i>Save Country to <span class="text-yellow-300" id="currentArchitectName">Player</span></h3>
+                            <button type="button" onclick="saveWorldToPlayer()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-md shadow-lg transition-colors">Save Realm Data</button>
+                            <p class="text-xs text-slate-400 mt-2">Saves the current form data to your synced player entry.</p>
                         </div>
 
                         <!-- CRAFTING -->
@@ -271,7 +362,7 @@
                                     <h4 class="text-white font-bold mb-2">Craft Weapon</h4>
                                     <p class="text-xs text-slate-400 mb-2">Cost: 5 Energy | <span id="craftingStatus" class="text-yellow-500">Resource: None</span></p>
                                     <select id="crafterSelect" class="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600 mb-2"></select>
-                                    <input type="text" id="schematicInput" placeholder="Weapon Name..." class="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600 mb-2">
+                                    <input type="text" id="schematicInput" placeholder="Weapon Name..." class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm mb-2">
                                     <button type="button" onclick="craftItem()" class="w-full bg-red-800 hover:bg-red-700 text-white font-bold py-2 rounded text-sm">Craft</button>
                                 </div>
                             </div>
@@ -298,12 +389,12 @@
                             <p class="text-[10px] text-slate-400 uppercase tracking-widest mb-4">1v1 - First to 10</p>
                             <div class="flex justify-between items-center mb-6 gap-2">
                                 <div class="w-1/2">
-                                    <select id="p1Select" onchange="updateBattleOdds()" class="w-full bg-indigo-900/30 border border-indigo-500/50 text-indigo-300 text-xs p-1 rounded font-bold"><option>P1</option></select>
+                                    <select id="p1Select" onchange="updateBattleOdds()" class="w-full bg-indigo-900/30 border border-indigo-500/50 text-indigo-300 text-xs p-1 rounded font-bold"><option value="">P1</option></select>
                                     <div class="text-2xl font-bold text-white mt-2" id="p1Score">0</div>
                                 </div>
                                 <div class="text-slate-500 font-bold">VS</div>
                                 <div class="w-1/2">
-                                    <select id="p2Select" onchange="updateBattleOdds()" class="w-full bg-red-900/30 border border-red-500/50 text-red-300 text-xs p-1 rounded font-bold"><option>P2</option></select>
+                                    <select id="p2Select" onchange="updateBattleOdds()" class="w-full bg-red-900/30 border border-red-500/50 text-red-300 text-xs p-1 rounded font-bold"><option value="">P2</option></select>
                                     <div class="text-2xl font-bold text-white mt-2" id="p2Score">0</div>
                                 </div>
                             </div>
@@ -327,8 +418,8 @@
                             <div class="bg-indigo-900/20 p-2 rounded mb-2 border border-indigo-500/30">
                                 <div class="text-xs text-indigo-400 font-bold mb-1">TEAM 1 (Blue)</div>
                                 <div class="flex gap-1">
-                                    <select id="t1p1Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option>P1</option></select>
-                                    <select id="t1p2Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option>P2</option></select>
+                                    <select id="t1p1Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option value="">P1</option></select>
+                                    <select id="t1p2Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option value="">P2</option></select>
                                 </div>
                                 <div class="text-2xl font-bold text-white mt-1" id="t1Score">0</div>
                             </div>
@@ -339,8 +430,8 @@
                             <div class="bg-red-900/20 p-2 rounded mb-4 border border-red-500/30">
                                 <div class="text-xs text-red-400 font-bold mb-1">TEAM 2 (Red)</div>
                                 <div class="flex gap-1">
-                                    <select id="t2p1Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option>P3</option></select>
-                                    <select id="t2p2Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option>P4</option></select>
+                                    <select id="t2p1Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option value="">P3</option></select>
+                                    <select id="t2p2Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option value="">P4</option></select>
                                 </div>
                                 <div class="text-2xl font-bold text-white mt-1" id="t2Score">0</div>
                             </div>
@@ -364,13 +455,15 @@
 
                 <!-- Energy Tracker -->
                 <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-xl relative">
-                    <h2 class="text-xl font-bold text-white mb-4"><i class="fa-solid fa-bolt text-yellow-400"></i> Live Stats</h2>
-                    <div class="mb-4 flex gap-2">
-                        <input type="text" id="newPlayerName" placeholder="New Player" class="bg-slate-900 border border-slate-600 text-white text-sm rounded block w-full p-2">
-                        <button onclick="addPlayerManually()" class="bg-green-600 hover:bg-green-700 text-white rounded px-3"><i class="fa-solid fa-plus"></i></button>
+                    <h2 class="text-xl font-bold text-white mb-4"><i class="fa-solid fa-bolt text-yellow-400"></i> Live Player Stats</h2>
+                    <div id="playerList" class="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                         <div class="text-center text-slate-500 italic py-4">Waiting for realm data...</div>
                     </div>
-                    <div id="playerList" class="space-y-3 max-h-[300px] overflow-y-auto pr-1"></div>
-                    <div class="mt-4 pt-4 border-t border-slate-700"><p class="text-xs text-slate-400 text-center"><i class="fa-regular fa-clock"></i> +10 Points / 24h</p></div>
+                    <div class="mt-4 pt-4 border-t border-slate-700">
+                        <button onclick="increaseTechLevel()" class="w-full bg-indigo-700 hover:bg-indigo-600 text-white font-bold py-2 rounded text-sm">
+                            <i class="fa-solid fa-arrow-up-to-line mr-2"></i> Spend 10 Energy for +1 Tech Level (Self)
+                        </button>
+                    </div>
                 </div>
             </aside>
         </main>
@@ -378,7 +471,7 @@
         <!-- FOOTER -->
         <footer class="bg-slate-900/50 mt-8 py-4 border-t border-slate-700">
             <div class="container mx-auto px-4 text-center text-slate-500 text-xs">
-                Made by <span class="text-yellow-400 font-bold">Lucas Chase</span> | Styling by <span class="text-indigo-400 font-bold">Gemini 3</span>
+                Player ID: <span class="font-mono text-white text-[10px]" id="currentUserId">N/A</span>
             </div>
         </footer>
     </div>
@@ -395,14 +488,14 @@
         </div>
     </div>
 
-    <!-- Custom Notification/Confirmation UI (Replaces alert/confirm) -->
-    <!-- The actual elements for notification and confirmation are created dynamically by the JS below -->
-
     <script>
         // --- LOGIC SECTION ---
         const formFields = ['terrain', 'resources', 'climate', 'countryName', 'capitalCity', 'language', 'export', 'culture', 'history', 'unique'];
         let currentRotation = 0;
         let currentDuoRotation = 0;
+
+        // Display current user ID in the footer
+        document.getElementById('currentUserId').innerText = window.localPlayerId || 'N/A';
 
         function checkCraftingOptions() {
             const res = document.getElementById('resources').value;
@@ -410,57 +503,22 @@
         }
 
         // --- PLAYER FUNCTIONS ---
-        window.addPlayerManually = () => {
-            const name = document.getElementById('newPlayerName').value.trim();
-            if (!name) return;
-            createOrUpdatePlayer(name);
-            document.getElementById('newPlayerName').value = '';
-        };
-
         window.saveWorldToPlayer = () => {
-            const name = document.getElementById('architectName').value.trim();
-            if (!name) return alert("Enter name!");
-            createOrUpdatePlayer(name, true);
-        };
-
-        function createOrUpdatePlayer(name, withWorldData = false) {
+            if (!localPlayerId || !localPlayerName) return showNotification("Must join a realm with a name first!", 'bg-red-600');
+            
             let localPlayers = [...window.players]; 
-            let pIndex = localPlayers.findIndex(p => p.name.toLowerCase() === name.toLowerCase());
-            let p = pIndex > -1 ? localPlayers[pIndex] : null;
+            let pIndex = localPlayers.findIndex(p => p.id === localPlayerId);
+            
+            if (pIndex === -1) return showNotification("Player not found in realm list. Try rejoining.", 'bg-red-600');
 
-            if (!p) {
-                p = {
-                    id: Date.now(),
-                    name: name,
-                    energy: 10,
-                    techLevel: 0,
-                    inventory: [],
-                    lastUpdate: Date.now(),
-                    worldData: null
-                };
-                localPlayers.push(p);
-            } else {
-                // Update properties in place if player exists
-                p = { ...p }; 
-                localPlayers[pIndex] = p;
-            }
-
-            if (withWorldData) {
-                let data = {};
-                formFields.forEach(f => data[f] = document.getElementById(f).value);
-                p.worldData = data;
-                // Use a non-alert message box for better UX
-                showNotification(`World saved to ${p.name}! Syncing...`, 'bg-indigo-600');
-            }
+            const p = localPlayers[pIndex];
+            
+            let data = {};
+            formFields.forEach(f => data[f] = document.getElementById(f).value);
+            p.worldData = data;
+            
             window.saveToDb(localPlayers);
-        }
-
-        window.deletePlayer = (id) => {
-            // Replaced window.confirm with internal function
-            showConfirmation("Are you sure you want to delete this player?", () => {
-                let localPlayers = window.players.filter(p => p.id !== id);
-                window.saveToDb(localPlayers);
-            });
+            showNotification(`World saved to ${localPlayerName}! Syncing...`, 'bg-indigo-600');
         };
 
         window.loadPlayerWorldData = (id) => {
@@ -470,9 +528,26 @@
                 const el = document.getElementById(f);
                 if(el && p.worldData[f]) el.value = p.worldData[f];
             });
-            document.getElementById('architectName').value = p.name;
+            document.getElementById('currentArchitectName').innerText = p.name;
             checkCraftingOptions();
             showNotification(`Loaded ${p.name}'s world data.`, 'bg-green-600');
+        };
+
+        window.increaseTechLevel = () => {
+            if (!localPlayerId) return showNotification("Cannot perform action. Player identity is missing.", 'bg-red-600');
+
+            let localPlayers = [...window.players];
+            const pIndex = localPlayers.findIndex(p => p.id === localPlayerId);
+            if(pIndex === -1) return showNotification("Your player entry not found in realm.", 'bg-red-600');
+            
+            const p = localPlayers[pIndex];
+
+            if(p.energy < 10) return showNotification("Need 10 Energy to increase Tech Level!", 'bg-red-600');
+            
+            p.energy -= 10;
+            p.techLevel += 1;
+            window.saveToDb(localPlayers);
+            showNotification(`${p.name} gained +1 Tech Level!`, 'bg-indigo-600');
         };
 
         window.viewInventory = (id) => {
@@ -502,11 +577,14 @@
 
         // --- CRAFTING & RESEARCH ---
         window.conductResearch = () => {
-            const id = parseInt(document.getElementById('researcherSelect').value);
+            const id = document.getElementById('researcherSelect').value;
             let localPlayers = [...window.players];
-            const p = localPlayers.find(p => p.id === id);
+            const pIndex = localPlayers.findIndex(p => p.id === id);
+            const p = localPlayers[pIndex];
+
             if(!p) return showNotification("Select a player to conduct research.", 'bg-red-600');
             if(p.energy < 2) return showNotification("Insufficient Energy! Need 2.", 'bg-red-600');
+            
             p.energy -= 2;
             p.techLevel += 1;
             window.saveToDb(localPlayers);
@@ -514,11 +592,12 @@
         };
 
         window.craftItem = () => {
-            const id = parseInt(document.getElementById('crafterSelect').value);
+            const id = document.getElementById('crafterSelect').value;
             const itemName = document.getElementById('schematicInput').value.trim();
             const resource = document.getElementById('resources').value;
             let localPlayers = [...window.players];
-            const p = localPlayers.find(p => p.id === id);
+            const pIndex = localPlayers.findIndex(p => p.id === id);
+            const p = localPlayers[pIndex];
             
             if(!p || !itemName) return showNotification("Please select a crafter and provide a weapon name.", 'bg-red-600');
             if(p.energy < 5) return showNotification("Insufficient Energy! Need 5 to craft.", 'bg-red-600');
@@ -562,14 +641,17 @@
         window.updateBattleOdds = () => {
             const p1Id = document.getElementById('p1Select').value;
             const p2Id = document.getElementById('p2Select').value;
-            if(!p1Id || !p2Id) return;
+            if(!p1Id || !p2Id) {
+                document.getElementById('oddsDisplay').innerText = `Odds: 50% vs 50%`;
+                return 50;
+            }
             const p1 = window.players.find(p => p.id == p1Id);
             const p2 = window.players.find(p => p.id == p2Id);
-            if(!p1 || !p2) return;
+            if(!p1 || !p2) return 50;
             const diff = calculatePower(p1) - calculatePower(p2);
             let chance = 50 + (diff * 2);
             chance = Math.max(10, Math.min(90, chance));
-            document.getElementById('oddsDisplay').innerText = `${p1.name}: ${chance}% | ${p2.name}: ${100-chance}%`;
+            document.getElementById('oddsDisplay').innerText = `${p1.name}: ${Math.round(chance)}% | ${p2.name}: ${Math.round(100-chance)}%`;
             return chance;
         };
 
@@ -602,13 +684,16 @@
             const t2p1 = window.players.find(p => p.id == document.getElementById('t2p1Select').value);
             const t2p2 = window.players.find(p => p.id == document.getElementById('t2p2Select').value);
             
-            if(!t1p1 || !t1p2 || !t2p1 || !t2p2) return;
+            if(!t1p1 || !t1p2 || !t2p1 || !t2p2) {
+                document.getElementById('duoOddsDisplay').innerText = `Odds: 50% vs 50%`;
+                return 50;
+            }
 
             const powerT1 = calculatePower(t1p1) + calculatePower(t1p2);
             const powerT2 = calculatePower(t2p1) + calculatePower(t2p2);
             
             const diff = powerT1 - powerT2;
-            let chance = 50 + (diff * 1.5); // Slightly less impact per point for squads
+            let chance = 50 + (diff * 1.5); 
             chance = Math.max(10, Math.min(90, chance));
             
             document.getElementById('duoOddsDisplay').innerText = `Team 1: ${Math.round(chance)}% | Team 2: ${Math.round(100-chance)}%`;
@@ -650,24 +735,28 @@
         // --- RENDERERS ---
         window.renderPlayers = () => {
             const list = document.getElementById('playerList');
+            const currentArchitectNameSpan = document.getElementById('currentArchitectName');
             list.innerHTML = '';
+
+            // Update Architect Name display
+            currentArchitectNameSpan.innerText = localPlayerName || 'Player';
+            
+            // Render the player list
             window.players.forEach(p => {
-                // Check for 24h energy boost
-                if(Date.now() - p.lastUpdate > 86400000) { 
-                    p.energy = (p.energy || 0) + 10; 
-                    p.lastUpdate = Date.now(); 
-                    window.saveToDb(window.players); 
-                }
+                const isCurrentPlayer = p.id === localPlayerId;
                 const pow = calculatePower(p);
                 const hasWorld = p.worldData ? '<i class="fa-solid fa-globe text-blue-400" title="Has World Data"></i>' : '';
+                const currentPlayerTag = isCurrentPlayer ? '<span class="text-green-400 text-xs ml-2">[YOU]</span>' : '';
+                
                 list.innerHTML += `
-                    <div class="bg-slate-700/50 p-2 rounded border border-slate-600 text-sm">
+                    <div class="bg-slate-700/50 p-2 rounded border border-slate-600 text-sm ${isCurrentPlayer ? 'border-2 border-indigo-500/80' : ''}">
                         <div class="flex justify-between items-center">
-                            <span class="font-bold cursor-pointer hover:text-blue-400 transition-colors" onclick="loadPlayerWorldData(${p.id})">${p.name} ${hasWorld}</span>
+                            <span class="font-bold cursor-pointer hover:text-blue-400 transition-colors" onclick="loadPlayerWorldData('${p.id}')">
+                                ${p.name} ${hasWorld} ${currentPlayerTag}
+                            </span>
                             <div class="flex gap-2 items-center">
                                 <span class="text-yellow-500 font-mono text-xs" title="Energy"><i class="fa-solid fa-bolt"></i> ${p.energy}</span>
-                                <button onclick="viewInventory(${p.id})" class="text-indigo-400 hover:text-indigo-300 text-xs bg-slate-800 p-1.5 rounded" title="View Items"><i class="fa-solid fa-backpack"></i></button>
-                                <button onclick="deletePlayer(${p.id})" class="text-red-400 hover:text-red-300 ml-1"><i class="fa-solid fa-times"></i></button>
+                                <button onclick="viewInventory('${p.id}')" class="text-indigo-400 hover:text-indigo-300 text-xs bg-slate-800 p-1.5 rounded" title="View Items"><i class="fa-solid fa-backpack"></i></button>
                             </div>
                         </div>
                         <div class="flex justify-between text-xs text-slate-400 mt-2 pt-2 border-t border-slate-600/50">
@@ -688,10 +777,13 @@
                  if (el) {
                     const val = el.value;
                     el.innerHTML = '<option value="">Select</option>' + opts;
-                    el.value = val;
+                    // Attempt to preserve selection unless the previous value is no longer valid
+                    if (window.players.some(p => p.id === val)) {
+                         el.value = val;
+                    }
                  }
             });
-            window.updateBattleOdds(); // Update odds on player list change
+            window.updateBattleOdds(); 
             window.updateDuoBattleOdds();
         };
 
@@ -704,9 +796,8 @@
              rot += 1800;
              const rem = rot % 360;
              
-             // Ensure it lands on the correct side (Heads=0deg/P1/T1, Tails=180deg/P2/T2)
-             if (win) { rot += (360 - rem); } // Land on 0/360
-             else { rot += (180 - rem + 360) % 360; } // Land on 180
+             if (win) { rot += (360 - rem); } 
+             else { rot += (180 - rem + 360) % 360; } 
              
              if(isDuo) currentDuoRotation = rot; else currentRotation = rot;
              
@@ -714,13 +805,17 @@
              
              setTimeout(() => {
                  const res = document.getElementById(resultId);
+                 let winnerName = "";
+                 
                  if(isDuo) {
-                     res.innerText = win ? `TEAM 1 WINS!` : `TEAM 2 WINS!`;
+                     winnerName = win ? `TEAM 1` : `TEAM 2`;
                  } else {
-                     const p1Name = (window.players.find(p => p.id == state.p1Id) || {}).name || "P1";
-                     const p2Name = (window.players.find(p => p.id == state.p2Id) || {}).name || "P2";
-                     res.innerText = win ? `${p1Name} WINS!` : `${p2Name} WINS!`;
+                     const p1 = window.players.find(p => p.id == state.p1Id) || { name: 'P1' };
+                     const p2 = window.players.find(p => p.id == state.p2Id) || { name: 'P2' };
+                     winnerName = win ? p1.name : p2.name;
                  }
+                 
+                 res.innerText = `${winnerName} WINS!`;
                  res.className = `h-6 text-sm font-bold ${win ? 'text-indigo-400' : 'text-red-400'} mb-2`;
              }, 1500);
         };
