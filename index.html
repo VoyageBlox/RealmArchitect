@@ -7,7 +7,7 @@
     <!-- Tailwind CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght=300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght=400;700&family=Inter:wght=300;400;600&display=swap" rel="stylesheet">
     
     <!-- ⚠️ YOUR FIREBASE CONFIGURATION ⚠️ -->
     <script>
@@ -153,8 +153,11 @@
                 return p;
             });
 
-            await window.saveToDb(updatedPlayers);
-            showNotification("World Data Saved Successfully!", 'bg-green-600');
+            // Use the success status returned by saveToDb to show notification
+            const success = await window.saveToDb(updatedPlayers);
+            if (success) {
+                showNotification("World Data Saved Successfully!", 'bg-green-600');
+            }
         };
 
         window.conductResearch = async () => {
@@ -171,8 +174,10 @@
             updatedPlayers[index].techLevel += 1;
             updatedPlayers[index].lastUpdate = Date.now();
 
-            await window.saveToDb(updatedPlayers);
-            showNotification(`${player.name} researched new tech! Tech Level is now ${updatedPlayers[index].techLevel}.`, 'bg-indigo-600');
+            const success = await window.saveToDb(updatedPlayers);
+            if (success) {
+                showNotification(`${player.name} researched new tech! Tech Level is now ${updatedPlayers[index].techLevel}.`, 'bg-indigo-600');
+            }
         };
 
         window.craftItem = async () => {
@@ -194,8 +199,10 @@
             updatedPlayers[index].inventory.push(`${schematic} (${requiredResource})`);
             updatedPlayers[index].lastUpdate = Date.now();
 
-            await window.saveToDb(updatedPlayers);
-            showNotification(`${player.name} crafted ${schematic} using ${requiredResource}!`, 'bg-green-600');
+            const success = await window.saveToDb(updatedPlayers);
+            if (success) {
+                showNotification(`${player.name} crafted ${schematic} using ${requiredResource}!`, 'bg-green-600');
+            }
         };
 
         window.checkCraftingOptions = () => {
@@ -259,7 +266,10 @@
             } else {
                 newBattleState.p2 += 1;
             }
-            await window.saveToDb(window.players, newBattleState);
+            const success = await window.saveToDb(window.players, newBattleState);
+            if (success) {
+                // Animation will be triggered by onSnapshot
+            }
         };
 
         window.updateDuoBattleOdds = () => {
@@ -316,19 +326,26 @@
             } else {
                 newDuoBattleState.t2 += 1;
             }
-            await window.saveToDb(window.players, battleState, newDuoBattleState);
+            const success = await window.saveToDb(window.players, battleState, newDuoBattleState);
+            if (success) {
+                 // Animation will be triggered by onSnapshot
+            }
         };
 
         window.resetBattle = async () => {
             const newBattleState = { p1: 0, p2: 0, lastBattleId: battleState.lastBattleId, result: null, winner: null };
-            await window.saveToDb(window.players, newBattleState, duoBattleState);
-            showNotification("1v1 Score Reset!", 'bg-slate-600');
+            const success = await window.saveToDb(window.players, newBattleState, duoBattleState);
+            if (success) {
+                showNotification("1v1 Score Reset!", 'bg-slate-600');
+            }
         };
 
         window.resetDuoBattle = async () => {
             const newDuoBattleState = { t1: 0, t2: 0, lastBattleId: duoBattleState.lastBattleId, result: null, winner: null };
-            await window.saveToDb(window.players, battleState, newDuoBattleState);
-            showNotification("2v2 Score Reset!", 'bg-slate-600');
+            const success = await window.saveToDb(window.players, battleState, newDuoBattleState);
+             if (success) {
+                showNotification("2v2 Score Reset!", 'bg-slate-600');
+            }
         };
 
         window.triggerBattleAnimation = (newState, coinId, resultDisplayId, isDuo = false) => {
@@ -438,8 +455,8 @@
                         await signInWithCustomToken(auth, window.__initial_auth_token);
                         authSuccess = true;
                     } catch (e) {
-                         // This is the critical fix: If custom token fails (mismatch config), log warn and fall through
-                        console.warn("Custom token auth failed (likely environment mismatch). Falling back to Anonymous.", e);
+                         // Fallback to Anonymous if custom token fails (mismatch config)
+                        console.warn("Custom token auth failed. Falling back to Anonymous Auth.", e);
                     }
                 }
 
@@ -545,6 +562,7 @@
                 }
 
                 if (needsUpdate) {
+                    // Only use initialCreate=true when adding a player to avoid race conditions
                     window.saveToDb(localPlayers, data.battleState, data.duoBattleState, true);
                     return; 
                 }
@@ -584,18 +602,31 @@
                 showNotification("Sync Failed: Check Permissions", 'bg-red-800');
             });
         }
-
+        
+        // saveToDb now returns boolean: true for success (local or remote), false for remote failure
         window.saveToDb = async (newPlayers, newBattleState = null, newDuoBattleState = null, initialCreate = false, attempt = 0) => {
-            if (!auth?.currentUser) {
+            if (!auth?.currentUser || !isFirebaseAvailable) {
+                // Local Mode Fallback
                 window.players = newPlayers;
                 if (newBattleState) battleState = newBattleState;
                 if (newDuoBattleState) duoBattleState = newDuoBattleState;
                 window.renderPlayers();
                 window.updateSelects();
-                return;
+                
+                if (!isFirebaseAvailable) {
+                    // Only show this notification if a state changing action (like saving) was explicitly requested
+                    if (!initialCreate && (newPlayers || newBattleState || newDuoBattleState)) {
+                       showNotification("Data updated locally (Offline Mode). Data will not sync.", 'bg-orange-600');
+                    }
+                }
+                return true; 
             }
 
-            if (!currentRealmId || !db || !appId) return;
+            if (!currentRealmId || !db || !appId) {
+                showNotification("System Error: Realm not joined or DB not initialized.", 'bg-red-800');
+                return false;
+            }
+
             const MAX_RETRIES = 3;
             const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
             
@@ -609,6 +640,7 @@
                 } else {
                      await updateDoc(realmRef, updateData);
                 }
+                return true; // Success
             } catch (e) {
                 if (attempt < MAX_RETRIES) {
                     const delay = Math.pow(2, attempt) * 1000;
@@ -616,7 +648,8 @@
                     return window.saveToDb(newPlayers, newBattleState, newDuoBattleState, initialCreate, attempt + 1);
                 }
                 console.error("Save failed:", e);
-                showNotification("Save failed. Check console.", 'bg-red-800');
+                showNotification("Save failed. Check console for Firebase/Firestore errors.", 'bg-red-800');
+                return false; // Final Failure
             }
         };
 
@@ -839,12 +872,12 @@
                             <p class="text-[10px] text-slate-400 uppercase tracking-widest mb-4">1v1 - First to 10</p>
                             <div class="flex justify-between items-center mb-6 gap-2">
                                 <div class="w-1/2">
-                                    <select id="p1Select" onchange="updateBattleOdds()" class="w-full bg-indigo-900/30 border border-indigo-500/50 text-indigo-300 text-xs p-1 rounded font-bold"><option value="">P1</option></select>
+                                    <select id="p1Select" onchange="updateBattleOdds()" class="w-1/2 bg-indigo-900/30 border border-indigo-500/50 text-indigo-300 text-xs p-1 rounded font-bold"><option value="">P1</option></select>
                                     <div class="text-2xl font-bold text-white mt-2" id="p1Score">0</div>
                                 </div>
                                 <div class="text-slate-500 font-bold">VS</div>
                                 <div class="w-1/2">
-                                    <select id="p2Select" onchange="updateBattleOdds()" class="w-full bg-red-900/30 border border-red-500/50 text-red-300 text-xs p-1 rounded font-bold"><option value="">P2</option></select>
+                                    <select id="p2Select" onchange="updateBattleOdds()" class="w-1/2 bg-red-900/30 border border-red-500/50 text-red-300 text-xs p-1 rounded font-bold"><option value="">P2</option></select>
                                     <div class="text-2xl font-bold text-white mt-2" id="p2Score">0</div>
                                 </div>
                             </div>
