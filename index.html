@@ -6,7 +6,7 @@
     <title>Realm Architect: Multiplayer Edition</title>
     <!-- Tailwind CDN for styling --><script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght=300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght[300;400;600]&display=swap" rel="stylesheet">
     
     <style>
         body {
@@ -72,7 +72,7 @@
             box-shadow: 0 0 0 1px #f59e0b;
         }
 
-        /* --- WONKY BACKGROUND STYLES --- */
+        /* --- WONKY BACKGROUND STYLES (Increased Opacity/Contrast) --- */
         .cube-background {
             position: fixed;
             top: 0;
@@ -87,7 +87,7 @@
         .shape {
             position: absolute;
             transform-style: preserve-3d;
-            opacity: 0.07; /* Very subtle opacity */
+            opacity: 0.2; /* Increased Opacity */
         }
         
         /* CUBE Styles */
@@ -100,8 +100,8 @@
             position: absolute;
             width: 100%;
             height: 100%;
-            background-color: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            background-color: rgba(255, 255, 255, 0.15); /* Brighter */
+            border: 1px solid rgba(255, 255, 255, 0.2); /* Brighter */
         }
         .cube-face.front  { transform: rotateY(0deg) translateZ(25px); }
         .cube-face.back   { transform: rotateX(180deg) translateZ(25px); }
@@ -116,7 +116,7 @@
             height: 0;
             border-left: 50px solid transparent;
             border-right: 50px solid transparent;
-            border-bottom: 86.6px solid rgba(168, 85, 247, 0.05); /* Fuchsia/Purple */
+            border-bottom: 86.6px solid rgba(168, 85, 247, 0.2); /* Fuchsia/Purple (Brighter) */
             animation: wonkyTriangle 15s infinite linear;
             filter: blur(1px);
         }
@@ -127,7 +127,7 @@
             height: 70px;
             background: transparent;
             border: 5px solid;
-            border-color: rgba(245, 158, 11, 0.05) transparent rgba(245, 158, 11, 0.05) transparent; /* Amber */
+            border-color: rgba(245, 158, 11, 0.2) transparent rgba(245, 158, 11, 0.2) transparent; /* Amber (Brighter) */
             border-radius: 50%;
             animation: swirlRotate 25s infinite linear;
         }
@@ -255,16 +255,18 @@
             const currentPlayer = window.players.find(p => p.id === localPlayerId);
             const formElements = document.getElementById('worldForm').elements;
             
-            if (!currentPlayer || !currentPlayer.worldData) {
-                // Clear or initialize form if no data exists (implicitly creates a "new" country)
+            // Check if player data is available
+            if (!currentPlayer || !currentPlayer.worldData || !currentPlayer.worldData.countryName) {
+                // Clear or initialize form if no data exists
                 document.getElementById('worldForm').reset();
+                // Set initial values for required selects
                 formElements.resources.value = 'None'; 
-                // Set initial values if you want defaults instead of empty
+                formElements.terrain.value = 'Plains';
+                formElements.climate.value = 'Temperate';
             } else {
                 const data = currentPlayer.worldData;
                 
                 // Populate form fields from the current player's worldData
-                // This connects the form to the "live stats" (the player object in the array)
                 formElements.terrain.value = data.terrain || 'Plains';
                 formElements.resources.value = data.resources || 'None';
                 formElements.climate.value = data.climate || 'Temperate';
@@ -279,6 +281,7 @@
 
             // Ensure the crafting resource dropdown reflects the player's resource choice
             window.checkCraftingOptions();
+            showNotification("Your Realm Data Loaded!", 'bg-blue-600');
         };
 
         window.updateSelects = () => {
@@ -316,11 +319,7 @@
             
             const currentPlayer = window.players.find(p => p.id === localPlayerId);
             if (!currentPlayer) {
-                // This scenario should be rare if localPlayerId is always in window.players,
-                // but good to have a fallback. In the setupRealtimeListener, we ensure 
-                // the current player is added if not present.
                 console.error("Local player object not found in window.players array.", localPlayerId, window.players);
-                // FIX: Added the correct error message requested by the user's previous context
                 return showNotification("Player object not found in data. Please refresh.", 'bg-red-600');
             }
 
@@ -472,11 +471,7 @@
             if (!p1 || !p2 || p1Id === p2Id) {
                 return showNotification("Select two unique players for the battle!", 'bg-red-600');
             }
-            // FIX: Removed the check that forced the local player to be involved. 
-            // Now any player can initiate any battle for true multiplayer functionality.
-            // if (p1Id !== localPlayerId && p2Id !== localPlayerId) {
-            //     return showNotification("You must be one of the combatants to initiate a battle!", 'bg-red-600');
-            // }
+            // Multiplayer Fix: No longer checking if localPlayerId is involved. Any authenticated user can start any battle.
 
             let diff = p1.techLevel - p2.techLevel;
             let baseOdd = 50;
@@ -539,14 +534,11 @@
             const t1Ids = [t1p1?.id, t1p2?.id].filter(Boolean);
             const t2Ids = [t2p1?.id, t2p2?.id].filter(Boolean);
             const allIds = [...t1Ids, ...t2Ids];
-            // const localPlayerInvolved = allIds.includes(localPlayerId); // Removed for MP functionality
+            // Multiplayer Fix: No longer checking if localPlayerId is involved. 
 
             if (!t1p1 || !t2p1) { 
                 return showNotification("Select at least P1 for Team 1 and P1 for Team 2!", 'bg-red-600');
             }
-            // if (!localPlayerInvolved) {
-            //     return showNotification("You must be part of one of the teams to initiate a battle!", 'bg-red-600');
-            // }
 
             let t1Level = (t1p1 ? t1p1.techLevel : 0) + (t1p2 ? t1p2.techLevel : 0);
             let t2Level = (t2p1 ? t2p1.techLevel : 0) + (t2p2 ? t2p2.techLevel : 0);
@@ -710,7 +702,6 @@
                     const data = docSnap.data();
                     
                     // 1. Process Players Array
-                    const oldPlayers = window.players;
                     window.players = data.players || [];
                     
                     // Ensure the current user is always represented, even if the DB hasn't caught up
@@ -731,7 +722,7 @@
                             lastUpdate: Date.now()
                         };
                         window.players.push(newPlayer);
-                        // Save the new player immediately
+                        // Save the new player immediately so others see it (and for persistence)
                         window.saveToDb(window.players, battleState, duoBattleState);
                     }
                     
@@ -755,6 +746,9 @@
                     // Update UI elements dependent on state
                     window.renderPlayers();
                     window.updateSelects(); // Updates dropdowns
+                    
+                    // *** FIX: Load saved data into the form automatically ***
+                    window.loadWorldData(); 
                     
                     document.getElementById('scoreP1').innerText = battleState.p1;
                     document.getElementById('scoreP2').innerText = battleState.p2;
