@@ -22,12 +22,12 @@
         const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
         const finalConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : DEFAULT_FIREBASE_CONFIG;
         
-        const isAppRunningLocallyWithDummyConfig = finalConfig.apiKey === DUMMY_KEY;
-        
+        // Assume failure if config is dummy or invalid key is present (which triggers the Firebase error)
+        let isFirebaseAvailable = false;
         let app, auth, db, appId;
         let currentUser = null;
-        let localPlayerId = null; // The unique ID for the current player (UID or UUID)
-        let localPlayerName = ''; // The display name for the current player
+        let localPlayerId = null; 
+        let localPlayerName = ''; 
         let currentRealmId = null;
         let unsubscribe = null;
 
@@ -36,7 +36,6 @@
         let battleState = { p1: 0, p2: 0, lastBattleId: 0, result: null, winner: null };
         let duoBattleState = { t1: 0, t2: 0, lastBattleId: 0, result: null, winner: null };
         
-        // Expose players globally for read access by render functions
         window.players = players; 
 
         try {
@@ -44,16 +43,19 @@
             auth = getAuth(app);
             db = getFirestore(app);
             appId = window.__app_id || 'default-app';
-            setLogLevel('debug'); 
+            setLogLevel('debug');
+            isFirebaseAvailable = true;
         } catch (e) {
              console.error("Failed to initialize Firebase:", e);
+             // Firebase initialization failed. We proceed in local mode.
+             isFirebaseAvailable = false;
         }
 
         // --- AUTH & LOBBY ---
         async function initAuth() {
             document.getElementById('loadingAuth').classList.remove('hidden');
             
-            if (isAppRunningLocallyWithDummyConfig || !auth) {
+            if (!isFirebaseAvailable || !auth) {
                 console.warn("Running in local/fallback mode. Firebase sync is disabled.");
                 localPlayerId = crypto.randomUUID(); // Set a persistent ID for local testing
                 document.getElementById('lobbyScreen').classList.remove('hidden');
@@ -70,22 +72,26 @@
                 }
             } catch (error) {
                 console.error("Firebase Auth failed:", error.code, error.message);
+                // Auth failed (likely due to invalid key from environment). Switch to local mode.
+                isFirebaseAvailable = false;
+                localPlayerId = crypto.randomUUID(); 
                 document.getElementById('lobbyScreen').classList.remove('hidden');
                 document.getElementById('loadingAuth').classList.add('hidden');
                 document.getElementById('authFailureWarning').classList.remove('hidden');
+                return;
             }
         }
 
         onAuthStateChanged(auth, (user) => {
-            if (user) {
+            if (user && isFirebaseAvailable) {
                 currentUser = user;
                 localPlayerId = user.uid; // Use UID as the unique player ID
                 document.getElementById('lobbyScreen').classList.remove('hidden');
                 document.getElementById('loadingAuth').classList.add('hidden');
-            } else if (!isAppRunningLocallyWithDummyConfig) {
+            } else if (!isFirebaseAvailable) {
+                 // Already handled by initAuth failure, but ensures the lobby shows
                  document.getElementById('lobbyScreen').classList.remove('hidden');
                  document.getElementById('loadingAuth').classList.add('hidden');
-                 document.getElementById('authFailureWarning').classList.remove('hidden');
             }
         });
 
@@ -102,6 +108,7 @@
             document.getElementById('lobbyScreen').classList.add('hidden');
             document.getElementById('appScreen').classList.remove('hidden');
             document.getElementById('realmDisplay').innerText = `Realm: ${code} | Player: ${localPlayerName}`;
+            document.getElementById('currentArchitectName').innerText = localPlayerName; // Set the name immediately
             
             if (localPlayerId) {
                 setupRealtimeListener();
@@ -112,9 +119,10 @@
 
         // --- REALTIME DATABASE LISTENER ---
         function setupRealtimeListener() {
-            if (isAppRunningLocallyWithDummyConfig) {
+            if (!isFirebaseAvailable) {
                  console.log("Local mode active. Skipping Firestore subscription.");
                  document.getElementById('realmDisplay').innerText = `Realm: ${currentRealmId} (Local Only)`;
+                 document.getElementById('currentUserId').innerText = localPlayerId.substring(0, 8) + '... (Local)';
                  return;
             }
 
@@ -122,6 +130,10 @@
                  console.error("Cannot set up listener: Missing credentials or database instance.");
                  return;
             }
+
+            // Update user ID display for authenticated users
+            document.getElementById('currentUserId').innerText = localPlayerId;
+
 
             const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
 
@@ -196,7 +208,8 @@
 
         // --- SYNC ACTIONS ---
         window.saveToDb = async (newPlayers, newBattleState = null, newDuoBattleState = null, initialCreate = false) => {
-            if (isAppRunningLocallyWithDummyConfig) {
+            if (!isFirebaseAvailable) {
+                // Local Mode Save (simulated)
                 window.players = newPlayers;
                 if (newBattleState) battleState = newBattleState;
                 if (newDuoBattleState) duoBattleState = newDuoBattleState;
@@ -215,7 +228,6 @@
 
             try {
                 if (initialCreate) {
-                     // Use setDoc to ensure the whole document exists if it was just created
                      await setDoc(realmRef, updateData, { merge: true });
                 } else {
                      await updateDoc(realmRef, updateData);
@@ -494,8 +506,10 @@
         let currentRotation = 0;
         let currentDuoRotation = 0;
 
-        // Display current user ID in the footer
-        document.getElementById('currentUserId').innerText = window.localPlayerId || 'N/A';
+        // Display current user ID in the footer (will be updated by setupRealtimeListener)
+        if (window.localPlayerId) {
+            document.getElementById('currentUserId').innerText = window.localPlayerId.substring(0, 8) + '... (Local)';
+        }
 
         function checkCraftingOptions() {
             const res = document.getElementById('resources').value;
@@ -509,7 +523,21 @@
             let localPlayers = [...window.players]; 
             let pIndex = localPlayers.findIndex(p => p.id === localPlayerId);
             
-            if (pIndex === -1) return showNotification("Player not found in realm list. Try rejoining.", 'bg-red-600');
+            // If running in local mode and player wasn't added yet (shouldn't happen, but safety check)
+            if (pIndex === -1) {
+                const newPlayer = {
+                    id: localPlayerId,
+                    name: localPlayerName,
+                    energy: 10,
+                    techLevel: 0,
+                    inventory: [],
+                    lastUpdate: Date.now(),
+                    worldData: null
+                };
+                localPlayers.push(newPlayer);
+                pIndex = localPlayers.length - 1;
+                showNotification("Player created locally. Start saving!", 'bg-blue-600');
+            }
 
             const p = localPlayers[pIndex];
             
@@ -542,7 +570,7 @@
             
             const p = localPlayers[pIndex];
 
-            if(p.energy < 10) return showNotification("Need 10 Energy to increase Tech Level!", 'bg-red-600');
+            if(p.energy < 10) return showNotification("Insufficient Energy! Need 10 Energy to increase Tech Level!", 'bg-red-600');
             
             p.energy -= 10;
             p.techLevel += 1;
@@ -610,6 +638,7 @@
             const power = Math.max(1, base + (Math.floor(Math.random()*3)-1));
 
             p.energy -= 5;
+            p.inventory = p.inventory || [];
             p.inventory.push({ name: itemName, power: power });
             document.getElementById('schematicInput').value = "";
             window.saveToDb(localPlayers);
@@ -619,7 +648,7 @@
         // --- BATTLE LOGIC ---
         function calculatePower(p) {
             if(!p) return 0;
-            return (p.techLevel*2) + p.inventory.reduce((sum, i) => sum + i.power, 0);
+            return (p.techLevel*2) + (p.inventory || []).reduce((sum, i) => sum + i.power, 0);
         }
 
         window.switchBattleMode = (mode) => {
@@ -738,8 +767,10 @@
             const currentArchitectNameSpan = document.getElementById('currentArchitectName');
             list.innerHTML = '';
 
-            // Update Architect Name display
-            currentArchitectNameSpan.innerText = localPlayerName || 'Player';
+            // Update Architect Name display (already set in joinRealm, but keeping this safe)
+            if (!currentArchitectNameSpan.innerText || currentArchitectNameSpan.innerText === 'Player') {
+                currentArchitectNameSpan.innerText = localPlayerName || 'Player';
+            }
             
             // Render the player list
             window.players.forEach(p => {
