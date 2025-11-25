@@ -3,1024 +3,459 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Realm Architect: Multiplayer Edition</title>
-    <!-- Tailwind CDN for styling -->
+    <title>Multiplayer Realm Entry</title>
+    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght=400;700&family=Inter:wght=300;400;600&display=swap" rel="stylesheet">
-    
     <style>
-        :root {
-            --primary: #fbbf24; /* Amber 400 */
-            --secondary: #1e293b; /* Slate 800 */
-            --bg-color: #0f172a; /* Slate 900 */
-        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
         body {
             font-family: 'Inter', sans-serif;
-            background-color: var(--bg-color);
-            color: #e2e8f0;
-        }
-        .header-font {
-            font-family: 'Cinzel', serif;
-        }
-        .coin-flip {
-            perspective: 1000px;
-        }
-        .coin {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            background: linear-gradient(45deg, var(--primary), #eab308);
-            box-shadow: 0 0 15px rgba(251, 191, 36, 0.7);
-            transform-style: preserve-3d;
-            transition: transform 1.5s cubic-bezier(0.4, 2.5, 0.55, 0.5);
+            background-color: #1a1a2e; /* Deep space background */
             display: flex;
-            align-items: center;
             justify-content: center;
-            position: relative;
-        }
-        .face {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            backface-visibility: hidden;
-            border-radius: 50%;
-            display: flex;
             align-items: center;
-            justify-content: center;
-            font-size: 2.5rem;
-            font-weight: bold;
-            color: var(--secondary);
-            border: 4px solid #fff;
-            background-color: #fcd34d;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
         }
-        .heads {
-            transform: rotateY(0deg);
+        .card {
+            background-color: #2e2e4f; /* Slightly lighter card background */
+            color: #e4e4f0;
+            border: 2px solid #5a5a7f;
         }
-        .tails {
-            transform: rotateY(180deg);
-            background-color: #fde68a;
+        .btn-primary {
+            background-color: #ff5757; /* Accent color */
+            transition: all 0.2s;
+        }
+        .btn-primary:hover {
+            background-color: #ff3c3c;
+            box-shadow: 0 4px 15px rgba(255, 87, 87, 0.4);
+        }
+        .realm-button-active {
+            background-color: #5a5a7f !important;
+            color: #fff !important;
+            border-color: #ff5757;
+            box-shadow: 0 0 10px rgba(255, 87, 87, 0.6);
+        }
+        input[type="text"] {
+            background-color: #1a1a2e;
+            color: #e4e4f0;
+            border: 1px solid #5a5a7f;
+        }
+        /* Custom scrollbar for user list */
+        .overflow-y-auto::-webkit-scrollbar {
+            width: 8px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-thumb {
+            background-color: #ff5757;
+            border-radius: 4px;
+        }
+        .overflow-y-auto::-webkit-scrollbar-track {
+            background: #2e2e4f;
         }
     </style>
+</head>
+<body>
+    <div id="app-container" class="w-full max-w-xl">
+        <!-- Loading screen while Firebase initializes -->
+        <div id="loading-screen" class="flex flex-col items-center justify-center h-48 text-center text-gray-400">
+            <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-pink-500"></div>
+            <p class="mt-4 text-lg font-medium">Initializing Connection...</p>
+        </div>
+    </div>
 
-    <!-- ⚠️ YOUR FIREBASE CONFIGURATION ⚠️ -->
-    <script>
-        // CONFIGURATION
-        window.__firebase_config = JSON.stringify({
-            apiKey: "AIzaSyCoRExE1mKJqKb6b5Kv1Suxun4DuMkMnG0",
-            authDomain: "real-96b07.firebaseapp.com",
-            projectId: "real-96b07",
-            storageBucket: "real-96b07.firebasestorage.app",
-            messagingSenderId: "699368878306",
-            appId: "1:699368878306:web:936026a24ec82a0d59eebb",
-            measurementId: "G-H86F01XPM3"
-        });
-        window.__app_id = "real-96b07"; 
-        
-        // FLAG TO TRACK SUCCESS
-        window.firebaseInitSuccess = false;
-    </script>
-    
-    <!-- Firebase Imports and Main Application Logic -->
     <script type="module">
-        // 1. Static Imports: Using CDN links for browser compatibility
+        // --- Firebase Imports ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, runTransaction, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- GLOBAL STATE ---
-        // Global variables to hold Firebase instances and user info
-        let app, auth, db, appId;
-        let currentUser = null;
-        let localPlayerId = null; 
-        let localPlayerName = ''; 
-        let currentRealmId = null;
-        let unsubscribe = null;
-        let isFirebaseAvailable = true;
+        // --- Global Variables and Configuration ---
+        let app;
+        let db;
+        let auth;
+        let userId = null;
+        let userUnsubscribe = null; // Listener for the current realm
 
-        // Global data stores (synced from Firestore)
-        window.players = [];
-        let battleState = { p1: 0, p2: 0, lastBattleId: 0, result: null, winner: null };
-        let duoBattleState = { t1: 0, t2: 0, lastBattleId: 0, result: null, winner: null };
+        // Mandatory Global Variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // --- UTILITY FUNCTIONS ---
-        function showNotification(message, className) {
-            const notification = document.createElement('div');
-            notification.className = `fixed top-4 right-4 z-[99] p-4 rounded-lg shadow-xl text-white font-bold transition-all ${className}`;
-            notification.innerHTML = `<i class="fa-solid fa-bell mr-2"></i> ${message}`;
-            document.body.appendChild(notification);
-            setTimeout(() => {
-                notification.classList.add('opacity-0');
-                notification.classList.remove('top-4');
-                notification.classList.add('top-0');
-                setTimeout(() => notification.remove(), 500);
-            }, 5000); 
+        // Application State Management
+        const AppState = {
+            currentScreen: 'loading', // 'loading', 'entry', or 'lobby'
+            username: localStorage.getItem('realmUsername') || '',
+            selectedRealm: localStorage.getItem('selectedRealm') || 'Alpha',
+            lobbyUsers: [],
+            isAuthReady: false,
+            realmNames: ['Alpha', 'Beta', 'Gamma', 'Delta'],
+        };
+
+        // --- UI Rendering Functions ---
+
+        /** Renders the current view based on AppState */
+        function render() {
+            const appContainer = document.getElementById('app-container');
+            if (!appContainer) return;
+
+            // Clear previous content but preserve loading state if needed
+            if (AppState.currentScreen !== 'loading') {
+                appContainer.innerHTML = '';
+            }
+
+            if (!AppState.isAuthReady) {
+                // If not ready, keep the initial loading screen visible
+                document.getElementById('loading-screen').classList.remove('hidden');
+                return;
+            } else {
+                const loadingScreen = document.getElementById('loading-screen');
+                if (loadingScreen) loadingScreen.classList.add('hidden');
+            }
+
+            // Render different screens
+            if (AppState.currentScreen === 'entry') {
+                appContainer.innerHTML = createEntryScreen();
+                setupEntryListeners();
+            } else if (AppState.currentScreen === 'lobby') {
+                appContainer.innerHTML = createLobbyScreen();
+                setupLobbyListeners();
+            }
         }
 
-        window.renderPlayers = () => {
-            const list = document.getElementById('playerList');
-            const currentPlayers = window.players || [];
-            
-            if (currentPlayers.length === 0) {
-                list.innerHTML = '<li class="text-slate-500 text-center text-sm p-4">Waiting for players to join...</li>';
-                return;
-            }
+        /** Templates the Entry Screen (Username/Realm Selection) */
+        function createEntryScreen() {
+            return `
+                <div class="card p-6 sm:p-10 w-full max-w-md rounded-xl shadow-2xl transition-all duration-300 transform scale-100 hover:scale-[1.01]">
+                    <h1 class="text-3xl font-extrabold text-white mb-2 text-center">Enter the Nexus</h1>
+                    <p class="text-xs text-gray-400 mb-6 text-center">Your ID: <span class="font-mono text-pink-400">${userId.substring(0, 8)}...</span></p>
 
-            const sortedPlayers = [...currentPlayers].sort((a, b) => b.techLevel - a.techLevel);
-            
-            list.innerHTML = sortedPlayers.map(p => `
-                <li class="p-3 bg-slate-700/50 rounded-lg flex justify-between items-center border border-slate-600 shadow-md">
-                    <div class="flex items-center space-x-3">
-                        <i class="fa-solid fa-user-circle text-lg ${p.id === localPlayerId ? 'text-yellow-400' : 'text-slate-400'}"></i>
-                        <span class="font-bold ${p.id === localPlayerId ? 'text-white' : 'text-slate-200'}">${p.name} ${p.id === localPlayerId ? '(You)' : ''}</span>
+                    <!-- Username Input -->
+                    <div class="mb-6">
+                        <label for="username-input" class="block text-sm font-medium text-gray-300 mb-2">Explorer Name (Min 3 Chars)</label>
+                        <input type="text" id="username-input" placeholder="Your Explorer Name" value="${AppState.username}"
+                               class="w-full px-4 py-3 rounded-lg focus:ring-pink-500 focus:border-pink-500 shadow-lg"
+                               maxlength="20" required>
                     </div>
-                    <div class="text-right text-sm">
-                        <span class="text-yellow-400 font-mono">⚡${p.energy}</span>
-                        <span class="text-indigo-400 ml-3">Tech: ${p.techLevel}</span>
-                        ${p.inventory && p.inventory.length > 0 ? `<span class="ml-3 text-red-300">⚔️ ${p.inventory.length} items</span>` : ''}
+
+                    <!-- Realm Selection -->
+                    <div class="mb-8">
+                        <h2 class="text-lg font-semibold text-gray-300 mb-3">Choose a Starting Realm</h2>
+                        <div class="grid grid-cols-2 gap-3">
+                            ${AppState.realmNames.map(realm => `
+                                <button data-realm="${realm}"
+                                        class="realm-button w-full px-4 py-3 rounded-lg text-sm font-bold transition-all duration-200 shadow-md
+                                        ${AppState.selectedRealm === realm
+                                            ? 'realm-button-active'
+                                            : 'bg-indigo-700 text-gray-200 hover:bg-indigo-600'
+                                        }">
+                                    ${realm} Realm
+                                </button>
+                            `).join('')}
+                        </div>
                     </div>
-                </li>
-            `).join('');
-            
-            const currentPlayer = currentPlayers.find(p => p.id === localPlayerId);
-            if(currentPlayer) {
-                document.getElementById('myEnergyDisplay').innerText = currentPlayer.energy;
-                document.getElementById('myTechLevelDisplay').innerText = currentPlayer.techLevel;
-            }
 
-            // Also update the World Data Preview if available
-            const worldPreview = document.getElementById('worldDataPreview');
-            if (currentPlayer && currentPlayer.worldData) {
-                const data = currentPlayer.worldData;
-                worldPreview.innerHTML = `
-                    <p class="text-xs text-slate-300 font-bold">${data.countryName || 'Untitled Country'}</p>
-                    <p class="text-xs text-slate-400">Terrain: ${data.terrain}, Climate: ${data.climate}</p>
-                    <p class="text-xs text-slate-400">Resource: ${data.resources}, Export: ${data.export}</p>
-                    <p class="text-xs text-slate-500 italic mt-2">${data.unique ? data.unique.substring(0, 50) + '...' : 'No unique trait defined.'}</p>
-                `;
-                // Populate form inputs with current data for easy editing
-                const formElements = document.getElementById('worldForm').elements;
-                Object.keys(data).forEach(key => {
-                    if (formElements[key]) formElements[key].value = data[key];
-                });
-            } else {
-                 worldPreview.innerHTML = '<p class="text-xs text-slate-500 italic">No world data saved yet.</p>';
-            }
-        };
+                    <!-- Enter Button -->
+                    <button id="enter-realm-button"
+                            class="w-full py-3 px-4 btn-primary text-white font-bold rounded-lg shadow-lg transition duration-300 disabled:opacity-50 disabled:bg-gray-500"
+                            disabled>
+                        Join ${AppState.selectedRealm}
+                    </button>
+                    <p id="error-message" class="text-pink-500 text-sm mt-3 text-center hidden font-semibold">Username must be between 3 and 20 characters.</p>
+                </div>
+            `;
+        }
 
-        window.updateSelects = () => {
-            const currentPlayers = window.players || [];
-            const playerOptions = currentPlayers.map(p => `<option value="${p.id}">${p.name} (T${p.techLevel}, ⚡${p.energy})</option>`).join('');
-            
-            const updateSelect = (id, defaultText) => {
-                const el = document.getElementById(id);
-                const currentVal = el.value;
-                el.innerHTML = `<option value="">${defaultText}</option>` + playerOptions;
-                if (currentVal && currentPlayers.find(p => p.id === currentVal)) {
-                    el.value = currentVal;
-                }
-            };
+        /** Templates the Lobby Screen (Online Users) */
+        function createLobbyScreen() {
+            return `
+                <div class="card p-6 sm:p-10 w-full max-w-md rounded-xl shadow-2xl transition-all duration-300">
+                    <h1 class="text-3xl font-extrabold text-pink-400 mb-2 text-center">Lobby: ${AppState.selectedRealm} Realm</h1>
+                    <p class="text-sm text-gray-400 mb-6 text-center">
+                        Welcome, <span class="font-bold text-white">${AppState.username}</span>. Awaiting your next move.
+                    </p>
 
-            updateSelect('p1Select', 'P1 - Select Player');
-            updateSelect('p2Select', 'P2 - Select Player');
-            updateSelect('researcherSelect', 'Select Researcher (You)');
-            updateSelect('crafterSelect', 'Select Crafter (You)');
-            updateSelect('t1p1Select', 'Team 1 (P1)');
-            updateSelect('t1p2Select', 'Team 1 (P2, Optional)');
-            updateSelect('t2p1Select', 'Team 2 (P1)');
-            updateSelect('t2p2Select', 'Team 2 (P2, Optional)');
+                    <!-- Current Users List -->
+                    <div class="bg-[#1a1a2e] p-4 rounded-lg shadow-inner mb-6 max-h-64 overflow-y-auto">
+                        <h2 class="text-xl font-semibold text-gray-300 mb-3 border-b border-[#5a5a7f] pb-2">Online Explorers (${AppState.lobbyUsers.length})</h2>
+                        <ul id="users-list" class="space-y-2">
+                            ${AppState.lobbyUsers.map(user => `
+                                <li class="flex items-center justify-between p-3 bg-[#2e2e4f] rounded-md shadow-md transition-all duration-150 ${user.id === userId ? 'border border-pink-500' : 'border border-[#2e2e4f]'}">
+                                    <span class="font-bold ${user.id === userId ? 'text-pink-400' : 'text-white'}">${user.username}</span>
+                                    <span class="text-xs text-gray-500">${user.id === userId ? '(You)' : ''}</span>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
 
-            window.updateBattleOdds();
-            window.updateDuoBattleOdds();
-            window.checkCraftingOptions();
-        };
+                    <!-- Exit Button -->
+                    <button id="exit-realm-button"
+                            class="w-full py-3 px-4 bg-red-600 text-white font-bold rounded-lg shadow-lg hover:bg-red-700 transition duration-300">
+                        Exit Realm
+                    </button>
+                </div>
+            `;
+        }
 
-        window.findPlayerById = (id) => (window.players || []).find(p => p.id === id);
 
-        // Logic for World Data Save
-        window.saveWorldToPlayer = async () => {
-            if (!localPlayerId || !currentRealmId) return showNotification("Must join a Realm first!", 'bg-red-600');
-            
-            const formElements = document.getElementById('worldForm').elements;
-            const worldData = {
-                terrain: formElements.terrain.value,
-                resources: formElements.resources.value,
-                climate: formElements.climate.value,
-                countryName: formElements.countryName.value,
-                capitalCity: formElements.capitalCity.value,
-                language: formElements.language.value,
-                export: formElements.export.value,
-                culture: formElements.culture.value,
-                history: formElements.history.value,
-                unique: formElements.unique.value,
-            };
+        // --- State/Data Management ---
 
-            const updatedPlayers = window.players.map(p => {
-                if (p.id === localPlayerId) {
-                    // Update only the local player's world data
-                    return { 
-                        ...p, 
-                        worldData: worldData,
-                        lastUpdate: Date.now()
-                    };
-                }
-                return p;
-            });
+        /** Updates the username and persists it */
+        function setUsername(name) {
+            AppState.username = name.trim();
+            localStorage.setItem('realmUsername', AppState.username);
+        }
 
-            // FIX: Pass all required state objects (players, 1v1 battle, 2v2 battle)
-            const success = await window.saveToDb(updatedPlayers, battleState, duoBattleState);
-            if (success) {
-                showNotification("World Data Saved Successfully!", 'bg-green-600');
-            }
-        };
+        /** Updates the selected realm and persists it */
+        function selectRealm(realmId) {
+            AppState.selectedRealm = realmId;
+            localStorage.setItem('selectedRealm', AppState.selectedRealm);
+            render(); // Re-render to update the active button and join text
+        }
 
-        window.conductResearch = async () => {
-            const playerId = document.getElementById('researcherSelect').value;
-            if (!playerId) return showNotification("Select a researcher!", 'bg-red-600');
-            const player = window.findPlayerById(playerId);
-            if (!player) return showNotification("Player not found!", 'bg-red-600');
-            if (player.id !== localPlayerId) return showNotification("You can only research for yourself!", 'bg-red-600');
-            if (player.energy < 2) return showNotification(`${player.name} needs 2 Energy to research!`, 'bg-red-600');
+        /** Sets up listeners for the Entry Screen */
+        function setupEntryListeners() {
+            const input = document.getElementById('username-input');
+            const button = document.getElementById('enter-realm-button');
+            const realmButtons = document.querySelectorAll('.realm-button');
+            const errorMessage = document.getElementById('error-message');
 
-            const updatedPlayers = window.players.map(p => {
-                if (p.id === playerId) {
-                    return {
-                        ...p,
-                        energy: p.energy - 2,
-                        techLevel: p.techLevel + 1,
-                        lastUpdate: Date.now()
-                    };
-                }
-                return p;
-            });
+            // Initial button state check
+            const isValid = AppState.username.length >= 3 && AppState.username.length <= 20;
+            button.disabled = !isValid;
+            button.textContent = `Join ${AppState.selectedRealm} Realm`;
 
-            // FIX: Pass all required state objects
-            const success = await window.saveToDb(updatedPlayers, battleState, duoBattleState);
-            if (success) {
-                const newLevel = updatedPlayers.find(p => p.id === playerId).techLevel;
-                showNotification(`${player.name} researched new tech! Tech Level is now ${newLevel}.`, 'bg-indigo-600');
-            }
-        };
+            // Input listener for live validation
+            input.addEventListener('input', (e) => {
+                setUsername(e.target.value);
+                const currentValid = AppState.username.length >= 3 && AppState.username.length <= 20;
 
-        window.craftItem = async () => {
-            const playerId = document.getElementById('crafterSelect').value;
-            const schematic = document.getElementById('schematicInput').value.trim();
-            const resourceSelect = document.getElementById('resources');
-            const requiredResource = resourceSelect.value;
-
-            if (!playerId) return showNotification("Select a crafter!", 'bg-red-600');
-            if (!schematic) return showNotification("Enter a schematic name!", 'bg-red-600');
-            if (!requiredResource || resourceSelect.selectedIndex === 0) return showNotification("Set a primary world resource first!", 'bg-red-600');
-            
-            const player = window.findPlayerById(playerId);
-            if (!player) return showNotification("Player not found!", 'bg-red-600');
-            if (player.id !== localPlayerId) return showNotification("You can only craft for yourself!", 'bg-red-600');
-            if (player.energy < 5) return showNotification(`${player.name} needs 5 Energy to craft!`, 'bg-red-600');
-            if (player.techLevel < 3) return showNotification(`${player.name} needs Tech Level 3 to craft complex items!`, 'bg-red-600');
-
-            const updatedPlayers = window.players.map(p => {
-                if (p.id === playerId) {
-                    return {
-                        ...p,
-                        energy: p.energy - 5,
-                        inventory: [...p.inventory, `${schematic} (${requiredResource})`],
-                        lastUpdate: Date.now()
-                    };
-                }
-                return p;
-            });
-
-            // FIX: Pass all required state objects
-            const success = await window.saveToDb(updatedPlayers, battleState, duoBattleState);
-            if (success) {
-                showNotification(`${player.name} crafted ${schematic} using ${requiredResource}!`, 'bg-green-600');
-            }
-        };
-
-        window.checkCraftingOptions = () => {
-            const resource = document.getElementById('resources').value || 'None';
-            document.getElementById('craftingStatus').innerText = `Resource: ${resource}`;
-        };
-
-        window.updateBattleOdds = () => {
-            const p1Id = document.getElementById('p1Select').value;
-            const p2Id = document.getElementById('p2Select').value;
-            const p1 = window.findPlayerById(p1Id);
-            const p2 = window.findPlayerById(p2Id);
-            
-            let p1Level = p1 ? p1.techLevel : 0;
-            let p2Level = p2 ? p2.techLevel : 0;
-
-            if (p1Id === p2Id && p1Id !== "") {
-                document.getElementById('oddsDisplay').innerText = "ERROR: Cannot battle yourself!";
-                return;
-            }
-
-            let diff = p1Level - p2Level;
-            let baseOdd = 50;
-            let adjustment = Math.min(30, Math.abs(diff) * 5);
-            let p1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
-            let p2Odd = 100 - p1Odd;
-            document.getElementById('oddsDisplay').innerText = `Odds: P1 (${p1Odd}%) vs P2 (${p2Odd}%)`;
-        };
-
-        window.battleFlip = async () => {
-            const p1Id = document.getElementById('p1Select').value;
-            const p2Id = document.getElementById('p2Select').value;
-            const p1 = window.findPlayerById(p1Id);
-            const p2 = window.findPlayerById(p2Id);
-            if (!p1 || !p2 || p1Id === p2Id) {
-                return showNotification("Select two unique players for the battle!", 'bg-red-600');
-            }
-
-            let diff = p1.techLevel - p2.techLevel;
-            let baseOdd = 50;
-            let adjustment = Math.min(30, Math.abs(diff) * 5);
-            let p1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
-
-            const coin = document.getElementById('coin');
-            coin.style.transition = 'none';
-            coin.style.transform = 'rotateY(0deg)';
-            await new Promise(resolve => setTimeout(resolve, 50));
-
-            const random = Math.random() * 100;
-            const winnerId = (random < p1Odd) ? p1Id : p2Id;
-            const flipResult = (winnerId === p1Id) ? 'heads' : 'tails';
-
-            const newBattleState = {
-                ...battleState,
-                lastBattleId: battleState.lastBattleId + 1,
-                result: flipResult,
-                winner: winnerId
-            };
-            if (winnerId === p1Id) {
-                newBattleState.p1 += 1;
-            } else {
-                newBattleState.p2 += 1;
-            }
-            
-            // FIX: Pass all required state objects
-            const success = await window.saveToDb(window.players, newBattleState, duoBattleState);
-            if (success) {
-                // Animation will be triggered by onSnapshot
-            }
-        };
-
-        window.updateDuoBattleOdds = () => {
-            const t1p1 = window.findPlayerById(document.getElementById('t1p1Select').value);
-            const t1p2 = window.findPlayerById(document.getElementById('t1p2Select').value);
-            const t2p1 = window.findPlayerById(document.getElementById('t2p1Select').value);
-            const t2p2 = window.findPlayerById(document.getElementById('t2p2Select').value);
-            let t1Level = (t1p1 ? t1p1.techLevel : 0) + (t1p2 ? t1p2.techLevel : 0);
-            let t2Level = (t2p1 ? t2p1.techLevel : 0) + (t2p2 ? t2p2.techLevel : 0);
-            const allPlayers = [t1p1, t1p2, t2p1, t2p2].filter(p => p);
-            const playerIds = allPlayers.map(p => p.id);
-            if (new Set(playerIds).size !== playerIds.length) {
-                document.getElementById('duoOddsDisplay').innerText = "ERROR: Duplicate players detected!";
-                return;
-            }
-            let diff = t1Level - t2Level;
-            let baseOdd = 50;
-            let adjustment = Math.min(30, Math.abs(diff) * 3);
-            let t1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
-            let t2Odd = 100 - t1Odd;
-            document.getElementById('duoOddsDisplay').innerText = `Odds: Team 1 (${t1Odd}%) vs Team 2 (${t2Odd}%)`;
-        };
-
-        window.duoBattleFlip = async () => {
-            const t1p1 = window.findPlayerById(document.getElementById('t1p1Select').value);
-            const t2p1 = window.findPlayerById(document.getElementById('t2p1Select').value);
-
-            if (!t1p1 || !t2p1) { 
-                return showNotification("Select at least P1 for Team 1 and P1 for Team 2!", 'bg-red-600');
-            }
-            
-            const t1p2 = window.findPlayerById(document.getElementById('t1p2Select').value);
-            const t2p2 = window.findPlayerById(document.getElementById('t2p2Select').value);
-            
-            let t1Level = (t1p1 ? t1p1.techLevel : 0) + (t1p2 ? t1p2.techLevel : 0);
-            let t2Level = (t2p1 ? t2p1.techLevel : 0) + (t2p2 ? t2p2.techLevel : 0);
-            let diff = t1Level - t2Level;
-            let baseOdd = 50;
-            let adjustment = Math.min(30, Math.abs(diff) * 3);
-            let t1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
-            const coin = document.getElementById('duoCoin');
-            coin.style.transition = 'none';
-            coin.style.transform = 'rotateY(0deg)';
-            await new Promise(resolve => setTimeout(resolve, 50));
-            const random = Math.random() * 100;
-            const winnerTeam = (random < t1Odd) ? 't1' : 't2';
-            const flipResult = (winnerTeam === 't1') ? 'heads' : 'tails';
-            const newDuoBattleState = {
-                ...duoBattleState,
-                lastBattleId: duoBattleState.lastBattleId + 1,
-                result: flipResult,
-                winner: winnerTeam
-            };
-            if (winnerTeam === 't1') {
-                newDuoBattleState.t1 += 1;
-            } else {
-                newDuoBattleState.t2 += 1;
-            }
-            
-            // FIX: Pass all required state objects
-            const success = await window.saveToDb(window.players, battleState, newDuoBattleState);
-            if (success) {
-                 // Animation will be triggered by onSnapshot
-            }
-        };
-
-        window.resetBattle = async () => {
-            const newBattleState = { p1: 0, p2: 0, lastBattleId: battleState.lastBattleId, result: null, winner: null };
-            // FIX: Pass all required state objects
-            const success = await window.saveToDb(window.players, newBattleState, duoBattleState);
-            if (success) {
-                showNotification("1v1 Score Reset!", 'bg-slate-600');
-            }
-        };
-
-        window.resetDuoBattle = async () => {
-            const newDuoBattleState = { t1: 0, t2: 0, lastBattleId: duoBattleState.lastBattleId, result: null, winner: null };
-            // FIX: Pass all required state objects
-            const success = await window.saveToDb(window.players, battleState, newDuoBattleState);
-             if (success) {
-                showNotification("2v2 Score Reset!", 'bg-slate-600');
-            }
-        };
-
-        window.triggerBattleAnimation = (newState, coinId, resultDisplayId, isDuo = false) => {
-            const coin = document.getElementById(coinId);
-            const resultDisplay = document.getElementById(resultDisplayId);
-            const p1 = window.findPlayerById(document.getElementById('p1Select').value);
-            const p2 = window.findPlayerById(document.getElementById('p2Select').value);
-            const team1Name = isDuo ? 'Team 1 (Blue)' : (p1 ? p1.name : 'P1');
-            const team2Name = isDuo ? 'Team 2 (Red)' : (p2 ? p2.name : 'P2');
-            
-            coin.style.transition = 'none';
-            coin.style.transform = 'rotateY(0deg)';
-            void coin.offsetWidth; 
-            coin.style.transition = 'transform 1.5s cubic-bezier(0.4, 2.5, 0.55, 0.5)';
-            
-            if (newState.result === 'heads') {
-                coin.style.transform = 'rotateY(3600deg)';
-            } else {
-                coin.style.transform = 'rotateY(3780deg)'; // 3600 + 180
-            }
-            
-            resultDisplay.innerText = '';
-            setTimeout(() => {
-                let winnerText;
-                if (isDuo) {
-                    winnerText = (newState.winner === 't1' ? team1Name : team2Name);
+                if (currentValid) {
+                    button.disabled = false;
+                    errorMessage.classList.add('hidden');
                 } else {
-                    winnerText = (newState.winner === p1.id) ? team1Name : team2Name;
-                }
-                
-                resultDisplay.innerText = `${winnerText} WINS!`;
-                setTimeout(() => {
-                    resultDisplay.innerText = '';
-                }, 4000);
-            }, 1800);
-        };
-
-        window.switchBattleMode = (mode) => {
-            document.getElementById('battleGUI_1v1').classList.toggle('hidden', mode !== '1v1');
-            document.getElementById('battleGUI_2v2').classList.toggle('hidden', mode !== '2v2');
-            document.getElementById('btn1v1').classList.toggle('bg-yellow-600', mode === '1v1');
-            document.getElementById('btn1v1').classList.toggle('bg-slate-700', mode !== '1v1');
-            document.getElementById('btn1v1').classList.toggle('text-white', mode === '1v1');
-            document.getElementById('btn1v1').classList.toggle('text-slate-300', mode !== '1v1');
-            document.getElementById('btn2v2').classList.toggle('bg-yellow-600', mode === '2v2');
-            document.getElementById('btn2v2').classList.toggle('bg-slate-700', mode !== '2v2');
-            document.getElementById('btn2v2').classList.toggle('text-white', mode === '2v2');
-            document.getElementById('btn2v2').classList.toggle('text-slate-300', mode !== '2v2');
-        }
-
-        // --- FIREBASE INITIALIZATION & AUTH ---
-        const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
-        
-        // FUNCTION TO FORCE LOCAL MODE IF AUTH FAILS
-        window.forceLocalMode = (reason) => {
-            if (window.firebaseInitSuccess) return; // Already succeeded
-            
-            console.warn("Forcing Local Mode:", reason);
-            isFirebaseAvailable = false;
-            localPlayerId = crypto.randomUUID();
-            
-            // UI Updates
-            const loader = document.getElementById('loadingAuth');
-            if(loader) loader.classList.add('hidden');
-            
-            const warningBox = document.getElementById('localModeWarning');
-            if(warningBox) warningBox.classList.remove('hidden');
-            
-            const userIdDisplay = document.getElementById('currentUserId');
-            if(userIdDisplay) userIdDisplay.innerText = localPlayerId.substring(0, 8) + '... (Offline)';
-            
-            const lobby = document.getElementById('lobbyScreen');
-            if(lobby) lobby.classList.remove('hidden');
-            
-            const statusMsg = document.getElementById('loadingStatusMsg');
-            if(statusMsg) statusMsg.innerText = "Connection Failed. Running Offline.";
-        }
-
-        async function initAuth() {
-            document.getElementById('loadingAuth').classList.remove('hidden');
-            
-            try {
-                app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                // analytics = getAnalytics(app); // Disabled for brevity
-                appId = window.__app_id || firebaseConfig.projectId;
-                setLogLevel('error');
-                console.log("Firebase App Initialized.");
-
-                let authSuccess = false;
-
-                // 1. Try Custom Token first (if available)
-                if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token.length > 0) {
-                    try {
-                        await signInWithCustomToken(auth, window.__initial_auth_token);
-                        authSuccess = true;
-                    } catch (e) {
-                        console.warn("Custom token auth failed. Falling back to Anonymous Auth.", e);
+                    button.disabled = true;
+                    if (AppState.username.length > 0) {
+                        errorMessage.classList.remove('hidden');
                     }
                 }
+            });
 
-                // 2. Fallback to Anonymous Auth
-                if (!authSuccess) {
-                   await signInAnonymously(auth);
-                }
-
-                // 3. Set up Auth State Listener
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        window.firebaseInitSuccess = true; // Flag success
-                        currentUser = user;
-                        localPlayerId = user.uid;
-                        document.getElementById('currentUserId').innerText = localPlayerId;
-                        document.getElementById('loadingAuth').classList.add('hidden');
-                    }
+            // Realm selection listeners
+            realmButtons.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    selectRealm(e.currentTarget.dataset.realm);
                 });
+            });
+
+            // Enter button listener
+            button.addEventListener('click', async () => {
+                if (!button.disabled) {
+                    button.disabled = true;
+                    button.textContent = 'Connecting...';
+                    await joinRealm(AppState.selectedRealm);
+                }
+            });
+        }
+
+        /** Sets up listeners for the Lobby Screen and real-time data */
+        function setupLobbyListeners() {
+            // Start real-time listener for the realm's user list
+            listenToRealm(AppState.selectedRealm);
+
+            // Exit button listener
+            document.getElementById('exit-realm-button').addEventListener('click', async () => {
+                document.getElementById('exit-realm-button').disabled = true;
+                document.getElementById('exit-realm-button').textContent = 'Exiting...';
+                await exitRealm(AppState.selectedRealm);
+            });
+        }
+
+        /** Handles adding the user to the Firestore realm document */
+        async function joinRealm(realmId) {
+            if (!userId || !AppState.username) return;
+
+            const realmRef = doc(db, `/artifacts/${appId}/public/data/realms`, realmId);
+
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const realmDoc = await transaction.get(realmRef);
+                    let users = realmDoc.exists ? realmDoc.data().users || {} : {};
+
+                    // Add or update current user details (status: 'online')
+                    users[userId] = {
+                        username: AppState.username,
+                        joinedAt: Date.now(),
+                        status: 'online',
+                        id: userId
+                    };
+
+                    transaction.set(realmRef, { users: users }, { merge: true });
+                });
+
+                // Success: Transition to lobby screen
+                AppState.currentScreen = 'lobby';
+                render();
 
             } catch (error) {
-                console.error("Critical Auth Error:", error);
-                
-                if (error.code === 'auth/operation-not-allowed' || error.code === 'auth/admin-restricted-operation') {
-                    showNotification("ERROR: Anonymous Sign-in Disabled. Enable it in Firebase Console -> Authentication -> Sign-in method.", "bg-red-900 border-2 border-red-500 w-96");
-                } else if (error.code === 'auth/configuration-not-found') {
-                    showNotification("ERROR: Firebase Auth Not Found. 1. Go to Firebase Console. 2. Click 'Authentication' and 'Get Started' to initialize the service.", "bg-red-900 border-2 border-red-500 w-96");
+                console.error("Failed to join realm:", error);
+                const button = document.getElementById('enter-realm-button');
+                const errorMessage = document.getElementById('error-message');
+                if (errorMessage) {
+                    errorMessage.textContent = 'Error joining realm. Check console.';
+                    errorMessage.classList.remove('hidden');
                 }
-                
-                window.forceLocalMode(error.message);
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = `Join ${AppState.selectedRealm} Realm`;
+                }
             }
         }
 
-        window.joinRealm = async () => {
-            const code = document.getElementById('realmCodeInput').value.trim().toUpperCase();
-            const name = document.getElementById('playerNameInput').value.trim();
-            if (!code) return showNotification("Enter a Realm Code!", 'bg-red-600');
-            if (!name) return showNotification("Enter your Player Name!", 'bg-red-600');
-            
-            localPlayerName = name;
-            currentRealmId = code;
-            
-            document.getElementById('lobbyScreen').classList.add('hidden');
-            document.getElementById('appScreen').classList.remove('hidden');
-            document.getElementById('realmDisplay').innerText = `Realm: ${code} | Player: ${localPlayerName}`;
-            document.getElementById('currentArchitectName').innerText = localPlayerName; 
-            
-            setupRealtimeListener();
-        };
-
-        function setupRealtimeListener() {
-            if (!auth.currentUser || !isFirebaseAvailable) {
-                 document.getElementById('realmDisplay').innerText = `Realm: ${currentRealmId} (Local Only)`;
-                 
-                 // Initialize local player if not in the list
-                 if (!window.players.find(p => p.id === localPlayerId)) {
-                     window.players.push({
-                         id: localPlayerId,
-                         name: localPlayerName,
-                         energy: 10,
-                         techLevel: 0,
-                         inventory: [],
-                         lastUpdate: Date.now(),
-                         worldData: null
-                     });
-                 }
-                 window.renderPlayers();
-                 window.updateSelects();
-                 return;
+        /** Sets up the onSnapshot listener for the selected realm */
+        function listenToRealm(realmId) {
+            if (userUnsubscribe) {
+                userUnsubscribe(); // Detach existing listener
             }
 
-            const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
+            const realmRef = doc(db, `/artifacts/${appId}/public/data/realms`, realmId);
 
-            unsubscribe = onSnapshot(realmRef, (docSnap) => {
-                let data = docSnap.exists() ? docSnap.data() : {};
-                let localPlayers = data.players || [];
-                let currentPlayer = localPlayers.find(p => p.id === localPlayerId);
-                let needsUpdate = false;
-                
-                if (!currentPlayer) {
-                    // Initialize player
-                    currentPlayer = {
-                        id: localPlayerId,
-                        name: localPlayerName,
-                        energy: 10,
-                        techLevel: 0,
-                        inventory: [],
-                        lastUpdate: Date.now(),
-                        worldData: null
-                    };
-                    localPlayers.push(currentPlayer);
-                    needsUpdate = true;
-                } else if (currentPlayer.name !== localPlayerName) {
-                    // Update player name if it changed
-                    localPlayers = localPlayers.map(p => {
-                        if (p.id === localPlayerId) {
-                            if (p.name !== localPlayerName) {
-                                needsUpdate = true;
-                                return { ...p, name: localPlayerName };
-                            }
-                        }
-                        return p;
-                    });
-                }
+            userUnsubscribe = onSnapshot(realmRef, (docSnapshot) => {
+                if (docSnapshot.exists()) {
+                    const usersMap = docSnapshot.data().users || {};
 
-                if (needsUpdate) {
-                    // Initial creation or name update only, pass all current states
-                    window.saveToDb(localPlayers, data.battleState || battleState, data.duoBattleState || duoBattleState, true);
-                    return; 
-                }
-                
-                window.players = localPlayers;
-                
-                // Process battle states and trigger animation only if ID changed
-                if (data.battleState) {
-                    if (data.battleState.lastBattleId !== battleState.lastBattleId) {
-                        window.triggerBattleAnimation(data.battleState, 'coin', 'battleResult');
+                    // Filter for online users and convert to array
+                    const newUsersArray = Object.values(usersMap)
+                        .filter(user => user && user.status === 'online' && user.username)
+                        .sort((a, b) => b.joinedAt - a.joinedAt);
+
+                    AppState.lobbyUsers = newUsersArray;
+
+                    // Update the UI if we are in the lobby state
+                    if (AppState.currentScreen === 'lobby') {
+                        updateLobbyUserList();
                     }
-                    battleState = data.battleState;
-                    document.getElementById('p1Score').innerText = battleState.p1;
-                    document.getElementById('p2Score').innerText = battleState.p2;
-                }
-                if (data.duoBattleState) {
-                    if (data.duoBattleState.lastBattleId !== duoBattleState.lastBattleId) {
-                        window.triggerBattleAnimation(data.duoBattleState, 'duoCoin', 'duoBattleResult', true);
+                } else {
+                    // Initialize the realm document if it doesn't exist
+                    setDoc(realmRef, { users: {} }, { merge: true });
+                    AppState.lobbyUsers = [];
+                    if (AppState.currentScreen === 'lobby') {
+                        updateLobbyUserList();
                     }
-                    duoBattleState = data.duoBattleState;
-                    document.getElementById('t1Score').innerText = duoBattleState.t1;
-                    document.getElementById('t2Score').innerText = duoBattleState.t2;
-                }
-                
-                window.renderPlayers();
-                window.updateSelects();
-
-                // Ensure initial document exists if snapshot returns no data but we have a player
-                if (!docSnap.exists() && localPlayers.length > 0) {
-                    window.saveToDb(localPlayers, battleState, duoBattleState, true);
                 }
             }, (error) => {
-                console.error("Sync Error:", error);
-                document.getElementById('realmDisplay').innerText = `Realm: ${currentRealmId} (Sync Failed!)`;
-                showNotification("Sync Failed: Check Permissions", 'bg-red-800');
+                console.error("Error listening to realm:", error);
+                // Handle error
             });
         }
-        
-        // --- CORE DATABASE SAVE FUNCTION WITH EXPONENTIAL BACKOFF ---
-        window.saveToDb = async (newPlayers = undefined, newBattleState = undefined, newDuoBattleState = undefined, initialCreate = false, attempt = 0) => {
-            if (!auth?.currentUser || !isFirebaseAvailable) {
-                // Local Mode Fallback for UI update
-                if (newPlayers !== undefined) window.players = newPlayers;
-                if (newBattleState !== undefined) battleState = newBattleState;
-                if (newDuoBattleState !== undefined) duoBattleState = newDuoBattleState;
-                window.renderPlayers();
-                window.updateSelects();
-                
-                if (!isFirebaseAvailable && !initialCreate && (newPlayers || newBattleState || newDuoBattleState)) {
-                    showNotification("Data updated locally (Offline Mode). Data will not sync.", 'bg-orange-600');
+
+        /** Updates the user list UI element only */
+        function updateLobbyUserList() {
+            const usersListElement = document.getElementById('users-list');
+            if (usersListElement) {
+                usersListElement.innerHTML = AppState.lobbyUsers.map(user => `
+                    <li class="flex items-center justify-between p-3 bg-[#1a1a2e] rounded-md shadow-md transition-all duration-150 ${user.id === userId ? 'border border-pink-500' : 'border border-transparent'}">
+                        <span class="font-bold ${user.id === userId ? 'text-pink-400' : 'text-white'}">${user.username}</span>
+                        <span class="text-xs text-gray-500">${user.id === userId ? '(You)' : ''}</span>
+                    </li>
+                `).join('');
+
+                const header = usersListElement.closest('.bg-[#1a1a2e]').previousElementSibling;
+                if (header) {
+                    header.innerHTML = `<h1 class="text-3xl font-extrabold text-pink-400 mb-2 text-center">Lobby: ${AppState.selectedRealm} Realm</h1><p class="text-sm text-gray-400 mb-6 text-center">Welcome, <span class="font-bold text-white">${AppState.username}</span>. Awaiting your next move.</p>`;
                 }
-                return true; 
+                const countHeader = usersListElement.closest('.bg-[#1a1a2e]').querySelector('h2');
+                 if (countHeader) {
+                    countHeader.innerHTML = `Online Explorers (${AppState.lobbyUsers.length})`;
+                }
+            }
+        }
+
+        /** Handles removing the user from the Firestore realm document */
+        async function exitRealm(realmId) {
+            if (!userId) return;
+
+            if (userUnsubscribe) {
+                userUnsubscribe(); // Detach the listener
+                userUnsubscribe = null;
             }
 
-            if (!currentRealmId || !db || !appId) {
-                console.error("Attempted to save without Realm ID or DB initialization.");
-                return false;
-            }
-            
-            const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
-            
-            // 1. Construct the payload using provided data, defaulting to current global state if not provided
-            const payload = {};
-            if (newPlayers !== undefined) {
-                payload.players = newPlayers;
-            }
-            if (newBattleState !== undefined) {
-                payload.battleState = newBattleState;
-            }
-            if (newDuoBattleState !== undefined) {
-                payload.duoBattleState = newDuoBattleState;
-            }
+            const realmRef = doc(db, `/artifacts/${appId}/public/data/realms`, realmId);
 
-            // 2. Exponential Backoff Delay
-            if (attempt > 0) {
-                const delay = 1000 * Math.pow(2, attempt) + Math.random() * 500;
-                // console.log(`Retrying save in ${delay}ms...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-            }
-            
             try {
-                if (Object.keys(payload).length === 0) {
-                     console.warn("Save attempted with empty payload.");
-                     return true;
-                }
+                await runTransaction(db, async (transaction) => {
+                    const realmDoc = await transaction.get(realmRef);
+                    if (realmDoc.exists) {
+                        let users = realmDoc.data().users || {};
 
-                // 3. Save to Firestore. Use setDoc with merge=true for robustness
-                await setDoc(realmRef, { ...payload, ...(initialCreate && { createdAt: Date.now() }) }, { merge: true });
-                
-                // console.log(`Data successfully saved to Firestore (Attempt ${attempt + 1}).`);
-                return true;
+                        if (users[userId]) {
+                            // Set status to 'offline' instead of deleting
+                            users[userId].status = 'offline';
+                            users[userId].leftAt = Date.now();
+                        }
+
+                        transaction.set(realmRef, { users: users }, { merge: true });
+                    }
+                });
+
             } catch (error) {
-                // Retry logic for transient errors (e.g., network, concurrent writes)
-                if ((error.code === 'unavailable' || error.code === 'internal' || error.code === 'deadline-exceeded' || error.code === 'aborted') && attempt < 3) {
-                    console.warn(`Firestore write failed (Attempt ${attempt + 1}/${3}). Retrying...`, error.code);
-                    // Recurse with incremented attempt
-                    return window.saveToDb(newPlayers, newBattleState, newDuoBattleState, initialCreate, attempt + 1); 
-                }
-                
-                console.error("Firestore write failed after all retries:", error);
-                showNotification(`SYNC ERROR: Failed to save data. (${error.code})`, 'bg-red-800 border-2 border-red-400');
-                return false;
+                console.error("Failed to exit realm gracefully:", error);
+            } finally {
+                // Always transition client-side for immediate feedback
+                AppState.lobbyUsers = [];
+                AppState.currentScreen = 'entry';
+                render();
             }
-        };
+        }
 
 
-        // --- ENTRY POINT ---
-        window.onload = initAuth;
+        // --- Initialization ---
 
-    </script>
-</head>
+        async function initializeFirebase() {
+            try {
+                setLogLevel('Debug');
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
 
-<body class="min-h-screen p-4 md:p-8 bg-slate-900 text-slate-100">
+                // Check and set initial authentication state
+                await new Promise((resolve) => {
+                    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            userId = user.uid;
+                        } else {
+                            // Sign in if not authenticated
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                            userId = auth.currentUser.uid;
+                        }
+                        unsubscribe();
+                        resolve();
+                    });
+                });
 
-    <header class="text-center mb-8 border-b border-slate-700 pb-4">
-        <h1 class="text-3xl md:text-5xl header-font font-bold text-yellow-400 drop-shadow-lg">Realm Architect</h1>
-        <p id="realmDisplay" class="text-sm md:text-base text-slate-400 mt-1">Multiplayer Edition</p>
-        <p class="text-xs text-slate-500 mt-1">User ID: <span id="currentUserId" class="font-mono">...loading...</span></p>
-    </header>
+                // Set initial application state after authentication
+                AppState.isAuthReady = true;
+                AppState.currentScreen = 'entry'; // Start at the entry screen
 
-    <!-- Loading Screen -->
-    <div id="loadingAuth" class="fixed inset-0 bg-slate-900/90 flex flex-col items-center justify-center z-50">
-        <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-yellow-400"></div>
-        <p id="loadingStatusMsg" class="mt-4 text-yellow-400 font-semibold">Authenticating with Firebase...</p>
-    </div>
-
-    <!-- Lobby Screen (Initially Hidden until Auth/Force Local Mode is Done) -->
-    <div id="lobbyScreen" class="max-w-md mx-auto p-6 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 hidden">
-        <h2 class="text-2xl header-font font-bold mb-4 text-center text-yellow-400">Join or Create Realm</h2>
-        
-        <div id="localModeWarning" class="p-4 mb-4 bg-orange-800 rounded-lg text-sm text-white border-l-4 border-orange-400 hidden">
-            <i class="fa-solid fa-triangle-exclamation mr-2"></i> **Warning:** Running in Offline/Local Mode. Data will not sync.
-        </div>
-        
-        <div class="space-y-4">
-            <div>
-                <label for="realmCodeInput" class="block text-sm font-medium text-slate-300 mb-1">Realm Code (e.g., LORDS)</label>
-                <input type="text" id="realmCodeInput" value="CANVAS" class="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:ring-yellow-400 focus:border-yellow-400" placeholder="Enter a code for your realm" maxlength="10">
-            </div>
-            <div>
-                <label for="playerNameInput" class="block text-sm font-medium text-slate-300 mb-1">Your Architect Name</label>
-                <input type="text" id="playerNameInput" value="Architect Alpha" class="w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:ring-yellow-400 focus:border-yellow-400" placeholder="Your name for this realm">
-            </div>
-            <button onclick="window.joinRealm()" class="w-full py-3 bg-yellow-600 hover:bg-yellow-500 text-slate-900 font-bold rounded-lg shadow-lg transition duration-200 text-lg header-font">
-                <i class="fa-solid fa-vault mr-2"></i> Enter Realm
-            </button>
-        </div>
-    </div>
-
-    <!-- Main App Screen -->
-    <main id="appScreen" class="container mx-auto p-0 hidden">
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            <!-- Left Column: Player List & Stats -->
-            <div class="lg:col-span-1 space-y-8">
-                <div class="p-6 bg-slate-800 rounded-xl shadow-xl border border-slate-700">
-                    <h2 class="text-xl header-font font-bold mb-4 text-yellow-400 border-b border-slate-700 pb-2">Player Roster</h2>
-                    <ul id="playerList" class="space-y-3">
-                        <!-- Player list dynamically rendered here -->
-                        <li class="text-slate-500 text-center text-sm p-4">Loading players...</li>
-                    </ul>
-                </div>
-                
-                <!-- My Stats Display -->
-                <div class="p-6 bg-slate-800 rounded-xl shadow-xl border border-slate-700">
-                    <h2 class="text-xl header-font font-bold mb-4 text-yellow-400 border-b border-slate-700 pb-2">My Architect (<span id="currentArchitectName"></span>)</h2>
-                    <div class="flex justify-around items-center text-center">
-                        <div class="p-3 bg-slate-700 rounded-lg w-5/12">
-                            <i class="fa-solid fa-bolt text-2xl text-yellow-400"></i>
-                            <p class="text-lg font-bold" id="myEnergyDisplay">10</p>
-                            <p class="text-xs text-slate-400">Energy</p>
-                        </div>
-                        <div class="p-3 bg-slate-700 rounded-lg w-5/12">
-                            <i class="fa-solid fa-flask-vial text-2xl text-indigo-400"></i>
-                            <p class="text-lg font-bold" id="myTechLevelDisplay">0</p>
-                            <p class="text-xs text-slate-400">Tech Level</p>
-                        </div>
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                document.getElementById('app-container').innerHTML = `
+                    <div class="p-8 text-center text-red-400 card rounded-xl">
+                        <h2 class="text-xl font-bold">Connection Error</h2>
+                        <p class="mt-2">Could not connect to Firebase. Check console for details.</p>
+                        <p class="mt-1 font-mono text-sm text-gray-400">${error.message}</p>
                     </div>
-                    <div class="mt-4 p-3 bg-slate-700 rounded-lg">
-                        <h3 class="text-sm font-semibold text-slate-300">My World Snapshot:</h3>
-                        <div id="worldDataPreview" class="mt-1">
-                            <p class="text-xs text-slate-500 italic">No world data saved yet.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
+                `;
+            }
 
-            <!-- Middle Column: Actions -->
-            <div class="lg:col-span-2 space-y-8">
+            render(); // Initial render to show the entry screen
+        }
 
-                <!-- Action 1: Realm Architecture (World Data) -->
-                <div class="p-6 bg-slate-800 rounded-xl shadow-xl border border-slate-700">
-                    <h2 class="text-2xl header-font font-bold mb-4 text-green-400 border-b border-slate-700 pb-2">Realm Architecture & Design</h2>
-                    <form id="worldForm" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <input type="text" name="countryName" id="countryName" placeholder="Country Name" value="Aethelgard" class="input-field">
-                        <input type="text" name="capitalCity" id="capitalCity" placeholder="Capital City" value="New Hope" class="input-field">
-                        
-                        <select name="terrain" id="terrain" class="input-field">
-                            <option value="Mountains">Mountainous</option>
-                            <option value="Forest">Forest</option>
-                            <option value="Desert">Desert</option>
-                            <option value="Coastal">Coastal</option>
-                        </select>
-                        <select name="resources" id="resources" class="input-field" onchange="window.checkCraftingOptions()">
-                            <option value="">Select Primary Resource</option>
-                            <option value="Mithril">Mithril</option>
-                            <option value="Oil">Oil</option>
-                            <option value="Mana Crystals">Mana Crystals</option>
-                            <option value="Rare Spices">Rare Spices</option>
-                        </select>
-
-                        <input type="text" name="climate" id="climate" placeholder="Climate (e.g., Temperate)" value="Temperate" class="input-field">
-                        <input type="text" name="language" id="language" placeholder="Main Language" value="Common" class="input-field">
-                        <input type="text" name="export" id="export" placeholder="Primary Export" value="Grain" class="input-field">
-                        <input type="text" name="culture" id="culture" placeholder="Defining Culture" value="Warrior" class="input-field">
-
-                        <textarea name="history" id="history" placeholder="Brief History (Optional)" rows="2" class="input-field md:col-span-2">A young nation, built on the ruins of an ancient kingdom.</textarea>
-                        <textarea name="unique" id="unique" placeholder="Unique Trait (Critical for Prompts)" rows="2" class="input-field md:col-span-2">Possess the rare ability to manipulate gravity with singing.</textarea>
-
-                        <button type="button" onclick="window.saveWorldToPlayer()" class="md:col-span-2 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg shadow-md transition duration-200 mt-2">
-                            <i class="fa-solid fa-save mr-2"></i> Save Realm Data to My Architect
-                        </button>
-                    </form>
-                </div>
-
-                <!-- Action 2: Research & Crafting -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <!-- Research -->
-                    <div class="p-6 bg-slate-800 rounded-xl shadow-xl border border-slate-700">
-                        <h3 class="text-xl header-font font-bold mb-4 text-indigo-400 border-b border-slate-700 pb-2">Research (<span class="font-mono"> -2⚡ | +1 Tech</span>)</h3>
-                        <select id="researcherSelect" class="input-field w-full mb-4">
-                            <option value="">Select Researcher (Must be you)</option>
-                        </select>
-                        <button onclick="window.conductResearch()" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg shadow-md transition duration-200">
-                            <i class="fa-solid fa-brain mr-2"></i> Conduct Research
-                        </button>
-                    </div>
-
-                    <!-- Crafting -->
-                    <div class="p-6 bg-slate-800 rounded-xl shadow-xl border border-slate-700">
-                        <h3 class="text-xl header-font font-bold mb-4 text-red-400 border-b border-slate-700 pb-2">Craft Item (<span class="font-mono"> -5⚡ | T3 Required</span>)</h3>
-                        <select id="crafterSelect" class="input-field w-full mb-2">
-                            <option value="">Select Crafter (Must be you)</option>
-                        </select>
-                        <input type="text" id="schematicInput" placeholder="Schematic Name (e.g., War Golem)" class="input-field w-full mb-2">
-                        <p id="craftingStatus" class="text-sm text-slate-400 mb-4">Resource: None</p>
-                        <button onclick="window.craftItem()" class="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg shadow-md transition duration-200">
-                            <i class="fa-solid fa-hammer mr-2"></i> Craft Item
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Action 3: Battle Arena -->
-                <div class="p-6 bg-slate-800 rounded-xl shadow-xl border border-slate-700">
-                    <h2 class="text-2xl header-font font-bold mb-4 text-yellow-400 border-b border-slate-700 pb-2">Battle Arena (Tech-Weighted Flip)</h2>
-                    
-                    <div class="flex space-x-2 mb-4">
-                        <button id="btn1v1" onclick="window.switchBattleMode('1v1')" class="flex-1 py-2 rounded-lg font-semibold bg-yellow-600 text-white transition duration-200"><i class="fa-solid fa-user mr-1"></i> 1 vs 1</button>
-                        <button id="btn2v2" onclick="window.switchBattleMode('2v2')" class="flex-1 py-2 rounded-lg font-semibold bg-slate-700 text-slate-300 transition duration-200"><i class="fa-solid fa-users mr-1"></i> 2 vs 2</button>
-                    </div>
-
-                    <!-- 1 vs 1 Mode -->
-                    <div id="battleGUI_1v1">
-                        <div class="grid grid-cols-2 gap-4 mb-4">
-                            <select id="p1Select" onchange="window.updateBattleOdds()" class="input-field">
-                                <option value="">P1 - Select Player</option>
-                            </select>
-                            <select id="p2Select" onchange="window.updateBattleOdds()" class="input-field">
-                                <option value="">P2 - Select Player</option>
-                            </select>
-                        </div>
-                        
-                        <div class="flex justify-center items-center space-x-8">
-                            <div class="text-center">
-                                <p class="text-4xl font-mono text-blue-400 font-bold" id="p1Score">0</p>
-                                <p class="text-sm text-slate-400">P1 Score</p>
-                            </div>
-
-                            <div class="coin-flip flex flex-col items-center">
-                                <div id="coin" class="coin">
-                                    <div class="face heads"><i class="fa-solid fa-crown"></i></div>
-                                    <div class="face tails" style="transform: rotateY(180deg);"><i class="fa-solid fa-skull"></i></div>
-                                </div>
-                                <p id="oddsDisplay" class="text-sm text-slate-400 mt-2">Odds: P1 (50%) vs P2 (50%)</p>
-                            </div>
-                            
-                            <div class="text-center">
-                                <p class="text-4xl font-mono text-red-400 font-bold" id="p2Score">0</p>
-                                <p class="text-sm text-slate-400">P2 Score</p>
-                            </div>
-                        </div>
-
-                        <div class="mt-6 flex space-x-4">
-                            <button onclick="window.battleFlip()" class="flex-1 py-3 bg-yellow-600 hover:bg-yellow-500 text-slate-900 font-bold rounded-lg shadow-md transition duration-200">
-                                <i class="fa-solid fa-gavel mr-2"></i> Initiate 1v1 Battle
-                            </button>
-                            <button onclick="window.resetBattle()" class="py-3 px-4 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold rounded-lg transition duration-200">
-                                <i class="fa-solid fa-arrows-rotate"></i>
-                            </button>
-                        </div>
-                        <p id="battleResult" class="text-center text-xl header-font font-bold mt-4 text-green-400"></p>
-                    </div>
-
-                    <!-- 2 vs 2 Mode -->
-                    <div id="battleGUI_2v2" class="hidden">
-                         <p class="text-sm text-slate-300 mb-2">Team 1 (Blue) vs Team 2 (Red)</p>
-                         <div class="grid grid-cols-4 gap-4 mb-4">
-                            <select id="t1p1Select" onchange="window.updateDuoBattleOdds()" class="input-field col-span-2">
-                                <option value="">Team 1 (P1)</option>
-                            </select>
-                            <select id="t1p2Select" onchange="window.updateDuoBattleOdds()" class="input-field col-span-2">
-                                <option value="">Team 1 (P2)</option>
-                            </select>
-                            <select id="t2p1Select" onchange="window.updateDuoBattleOdds()" class="input-field col-span-2">
-                                <option value="">Team 2 (P1)</option>
-                            </select>
-                            <select id="t2p2Select" onchange="window.updateDuoBattleOdds()" class="input-field col-span-2">
-                                <option value="">Team 2 (P2)</option>
-                            </select>
-                        </div>
-                        
-                        <div class="flex justify-center items-center space-x-8">
-                            <div class="text-center">
-                                <p class="text-4xl font-mono text-blue-400 font-bold" id="t1Score">0</p>
-                                <p class="text-sm text-slate-400">Team 1 Score</p>
-                            </div>
-
-                            <div class="coin-flip flex flex-col items-center">
-                                <div id="duoCoin" class="coin">
-                                    <div class="face heads"><i class="fa-solid fa-shield-halved"></i></div>
-                                    <div class="face tails" style="transform: rotateY(180deg);"><i class="fa-solid fa-handshake-slash"></i></div>
-                                </div>
-                                <p id="duoOddsDisplay" class="text-sm text-slate-400 mt-2">Odds: Team 1 (50%) vs Team 2 (50%)</p>
-                            </div>
-                            
-                            <div class="text-center">
-                                <p class="text-4xl font-mono text-red-400 font-bold" id="t2Score">0</p>
-                                <p class="text-sm text-slate-400">Team 2 Score</p>
-                            </div>
-                        </div>
-
-                        <div class="mt-6 flex space-x-4">
-                            <button onclick="window.duoBattleFlip()" class="flex-1 py-3 bg-yellow-600 hover:bg-yellow-500 text-slate-900 font-bold rounded-lg shadow-md transition duration-200">
-                                <i class="fa-solid fa-chess-king mr-2"></i> Initiate 2v2 Battle
-                            </button>
-                            <button onclick="window.resetDuoBattle()" class="py-3 px-4 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold rounded-lg transition duration-200">
-                                <i class="fa-solid fa-arrows-rotate"></i>
-                            </button>
-                        </div>
-                        <p id="duoBattleResult" class="text-center text-xl header-font font-bold mt-4 text-green-400"></p>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </main>
-    <footer class="text-center mt-12 text-xs text-slate-600">
-        Realm Architect powered by Firebase Firestore Realtime Sync
-    </footer>
-
-    <script>
-        // Set up the default style for all input fields (used by the World Form)
-        document.head.insertAdjacentHTML('beforeend', `
-            <style>
-                .input-field {
-                    @apply w-full p-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:ring-yellow-400 focus:border-yellow-400;
-                }
-            </style>
-        `);
+        window.onload = initializeFirebase;
     </script>
 </body>
 </html>
