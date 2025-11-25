@@ -7,7 +7,7 @@
     <!-- Tailwind CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght@3d00;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght=300;400;600&display=swap" rel="stylesheet">
     
     <!-- ⚠️ YOUR FIREBASE CONFIGURATION ⚠️ -->
     <script>
@@ -46,7 +46,7 @@
                 notification.classList.remove('top-4');
                 notification.classList.add('top-0');
                 setTimeout(() => notification.remove(), 500);
-            }, 3000);
+            }, 8000); // Increased duration for error reading
         }
 
         window.renderPlayers = () => {
@@ -287,7 +287,7 @@
             const t1p1 = window.findPlayerById(document.getElementById('t1p1Select').value);
             const t1p2 = window.findPlayerById(document.getElementById('t1p2Select').value);
             const t2p1 = window.findPlayerById(document.getElementById('t2p1Select').value);
-            const t2p2 = window.findPlayerById(document.getElementById('t2p1Select').value);
+            const t2p2 = window.findPlayerById(document.getElementById('t2p2Select').value);
 
             if (!t1p1 || !t2p1) { 
                 return showNotification("Select at least P1 for Team 1 and P3 for Team 2!", 'bg-red-600');
@@ -465,7 +465,11 @@
                 
                 // SPECIFIC ERROR MESSAGES FOR USER
                 if (error.code === 'auth/operation-not-allowed' || error.code === 'auth/admin-restricted-operation') {
-                     showNotification("ERROR: Enable 'Anonymous' in Firebase Console -> Auth -> Sign-in method", "bg-red-900 border-2 border-red-500 w-96");
+                     // FIX 1: Provide clearer guidance for Anonymous Sign-in not enabled
+                     showNotification("ERROR: Anonymous Sign-in Disabled. Enable it in Firebase Console -> Authentication -> Sign-in method.", "bg-red-900 border-2 border-red-500 w-96");
+                } else if (error.code === 'auth/configuration-not-found') {
+                     // FIX 2: Provide clearer guidance for Authentication service not initialized
+                     showNotification("ERROR: Firebase Auth Not Found. 1. Go to Firebase Console. 2. Click 'Authentication' and 'Get Started' to initialize the service.", "bg-red-900 border-2 border-red-500 w-96");
                 }
                 
                 window.forceLocalMode(error.message);
