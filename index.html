@@ -433,6 +433,7 @@
                 formElements.climate.value = data.climate || 'Temperate';
                 formElements.countryName.value = data.countryName || '';
                 formElements.capitalCity.value = data.capitalCity || '';
+                // The elements below are now assumed to exist in HTML
                 formElements.language.value = data.language || '';
                 formElements.export.value = data.export || '';
                 formElements.culture.value = data.culture || '';
@@ -493,10 +494,12 @@
                 climate: formElements.climate.value,
                 countryName: formElements.countryName.value,
                 capitalCity: formElements.capitalCity.value,
-                language: formElements.language.value,
+                // These elements are now correctly retrieved from the form
+                language: formElements.language.value, 
                 export: formElements.export.value,
                 culture: formElements.culture.value,
                 history: formElements.history.value,
+                // End of new elements
                 unique: formElements.unique.value,
             };
 
@@ -942,6 +945,29 @@
                             </div>
                         </div>
                         
+                        <!-- FIX: Adding the missing input fields for language, export, culture, and history -->
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300">Primary Language</label>
+                                <input type="text" name="language" class="w-full p-2 rounded-lg" placeholder="e.g., Aethelian">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300">Primary Export</label>
+                                <input type="text" name="export" class="w-full p-2 rounded-lg" placeholder="e.g., Rare Spice">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300">Core Culture</label>
+                                <input type="text" name="culture" class="w-full p-2 rounded-lg" placeholder="e.g., Militaristic / Philosophical">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-300">Key Historical Event</label>
+                                <input type="text" name="history" class="w-full p-2 rounded-lg" placeholder="e.g., The Great Schism">
+                            </div>
+                        </div>
+                        <!-- END FIX -->
+
                         <div class="grid grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium text-slate-300">Primary Terrain</label>
