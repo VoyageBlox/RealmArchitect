@@ -64,12 +64,14 @@
             document.getElementById('loadingAuth').classList.remove('hidden');
             
             if (!isFirebaseAvailable || !auth) {
-                // FALLBACK: Local Mode
+                // FALLBACK: Local Mode (Invalid Config)
                 localPlayerId = crypto.randomUUID(); 
                 document.getElementById('currentUserId').innerText = localPlayerId.substring(0, 8) + '... (Local)';
                 document.getElementById('lobbyScreen').classList.remove('hidden');
                 document.getElementById('loadingAuth').classList.add('hidden');
                 document.getElementById('localModeWarning').classList.remove('hidden'); 
+                // Explicitly show the failure message as a notification for a moment
+                showNotification("Authentication Failed. Multiplayer Sync is Disabled.", 'bg-red-800');
                 console.log("Running in local/fallback mode. Sync is disabled.");
                 return;
             }
@@ -91,6 +93,8 @@
                 document.getElementById('lobbyScreen').classList.remove('hidden');
                 document.getElementById('loadingAuth').classList.add('hidden');
                 document.getElementById('localModeWarning').classList.remove('hidden'); 
+                // Explicitly show the failure message as a notification for a moment
+                showNotification("Authentication Failed. Multiplayer Sync is Disabled.", 'bg-red-800');
                 return;
             }
         }
