@@ -9,22 +9,440 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght@3d00;400;600&display=swap" rel="stylesheet">
     
-    <!-- Firebase Imports -->
+    <!-- ⚠️ YOUR FIREBASE CONFIGURATION ⚠️ -->
+    <script>
+        // I have inserted your specific configuration here
+        window.__firebase_config = JSON.stringify({
+            apiKey: "AIzaSyCoRExE1mKJqKb6b5Kv1Suxun4DuMkMnG0",
+            authDomain: "real-96b07.firebaseapp.com",
+            projectId: "real-96b07",
+            storageBucket: "real-96b07.firebasestorage.app",
+            messagingSenderId: "699368878306",
+            appId: "1:699368878306:web:936026a24ec82a0d59eebb",
+            measurementId: "G-H86F01XPM3"
+        });
+        
+        // This ID is used to store your game data in the database
+        window.__app_id = "real-96b07"; 
+    </script>
+    
+    <!-- Firebase Imports and Main Application Logic -->
     <script type="module">
-        // 1. Static Imports: Must be at the top of the module script
+        // 1. Static Imports: We use these URLs instead of 'firebase/app' so it works in the browser
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+
+        // --- UTILITY FUNCTIONS ---
+        function showNotification(message, className) {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 z-[99] p-4 rounded-lg shadow-xl text-white font-bold transition-all ${className}`;
+            notification.innerHTML = `<i class="fa-solid fa-bell mr-2"></i> ${message}`;
+            document.body.appendChild(notification);
+            setTimeout(() => {
+                notification.classList.add('opacity-0');
+                notification.classList.remove('top-4');
+                notification.classList.add('top-0');
+                setTimeout(() => notification.remove(), 500);
+            }, 3000);
+        }
+
+        window.renderPlayers = () => {
+            const list = document.getElementById('playerList');
+            // Safely handle empty players array
+            const currentPlayers = window.players || [];
+            
+            if (currentPlayers.length === 0) {
+                list.innerHTML = '<li class="text-slate-500 text-center text-sm p-4">Waiting for players to join...</li>';
+                return;
+            }
+
+            const sortedPlayers = [...currentPlayers].sort((a, b) => b.techLevel - a.techLevel);
+            
+            list.innerHTML = sortedPlayers.map(p => `
+                <li class="p-3 bg-slate-700/50 rounded-lg flex justify-between items-center border border-slate-600 shadow-md">
+                    <div class="flex items-center space-x-3">
+                        <i class="fa-solid fa-user-circle text-lg ${p.id === localPlayerId ? 'text-green-400' : 'text-slate-400'}"></i>
+                        <span class="font-bold ${p.id === localPlayerId ? 'text-white' : 'text-slate-200'}">${p.name} ${p.id === localPlayerId ? '(You)' : ''}</span>
+                    </div>
+                    <div class="text-right text-sm">
+                        <span class="text-yellow-400 font-mono">⚡${p.energy}</span>
+                        <span class="text-indigo-400 ml-3">Tech: ${p.techLevel}</span>
+                        ${p.inventory && p.inventory.length > 0 ? `<span class="ml-3 text-red-300">⚔️ ${p.inventory.length} items</span>` : ''}
+                    </div>
+                </li>
+            `).join('');
+            
+            const currentPlayer = currentPlayers.find(p => p.id === localPlayerId);
+            if(currentPlayer) {
+                document.getElementById('myEnergyDisplay').innerText = currentPlayer.energy;
+                document.getElementById('myTechLevelDisplay').innerText = currentPlayer.techLevel;
+            }
+
+            // Also update the World Data Preview if available
+            const worldPreview = document.getElementById('worldDataPreview');
+            if (currentPlayer && currentPlayer.worldData) {
+                const data = currentPlayer.worldData;
+                worldPreview.innerHTML = `
+                    <p class="text-xs text-slate-300">**${data.countryName || 'Untitled Country'}**</p>
+                    <p class="text-xs text-slate-400">Terrain: ${data.terrain}, Climate: ${data.climate}</p>
+                    <p class="text-xs text-slate-400">Resources: ${data.resources}, Export: ${data.export}</p>
+                    <p class="text-xs text-slate-500 italic mt-2">${data.unique ? data.unique.substring(0, 50) + '...' : 'No unique trait defined.'}</p>
+                `;
+            } else {
+                 worldPreview.innerHTML = '<p class="text-xs text-slate-500 italic">No world data saved yet.</p>';
+            }
+        };
+
+        window.updateSelects = () => {
+            const currentPlayers = window.players || [];
+            const playerOptions = currentPlayers.map(p => `<option value="${p.id}">${p.name} (T${p.techLevel})</option>`).join('');
+            
+            // Helper to preserve selection if possible
+            const updateSelect = (id, defaultText) => {
+                const el = document.getElementById(id);
+                const currentVal = el.value;
+                el.innerHTML = `<option value="">${defaultText}</option>` + playerOptions;
+                if (currentVal && currentPlayers.find(p => p.id === currentVal)) {
+                    el.value = currentVal;
+                }
+            };
+
+            // 1v1 Battle Selects
+            updateSelect('p1Select', 'P1 - Select Player');
+            updateSelect('p2Select', 'P2 - Select Player');
+
+            // Research/Crafting Selects
+            updateSelect('researcherSelect', 'Select Researcher');
+            updateSelect('crafterSelect', 'Select Crafter');
+
+            // 2v2 Battle Selects
+            updateSelect('t1p1Select', 'Team 1 (P1)');
+            updateSelect('t1p2Select', 'Team 1 (P2)');
+            updateSelect('t2p1Select', 'Team 2 (P1)');
+            updateSelect('t2p2Select', 'Team 2 (P2)');
+
+            window.updateBattleOdds();
+            window.updateDuoBattleOdds();
+            window.checkCraftingOptions();
+        };
+
+        window.findPlayerById = (id) => (window.players || []).find(p => p.id === id);
+
+        // Logic for World Data Save
+        window.saveWorldToPlayer = async () => {
+            if (!localPlayerId) return showNotification("You are not logged in!", 'bg-red-600');
+            
+            const formElements = document.getElementById('worldForm').elements;
+            const worldData = {
+                terrain: formElements.terrain.value,
+                resources: formElements.resources.value,
+                climate: formElements.climate.value,
+                countryName: formElements.countryName.value,
+                capitalCity: formElements.capitalCity.value,
+                language: formElements.language.value,
+                export: formElements.export.value,
+                culture: formElements.culture.value,
+                history: formElements.history.value,
+                unique: formElements.unique.value,
+            };
+
+            const updatedPlayers = window.players.map(p => {
+                if (p.id === localPlayerId) {
+                    return { 
+                        ...p, 
+                        worldData: worldData,
+                        lastUpdate: Date.now()
+                    };
+                }
+                return p;
+            });
+
+            await window.saveToDb(updatedPlayers);
+            showNotification("World Data Saved Successfully!", 'bg-green-600');
+        };
+
+        // Logic for Research
+        window.conductResearch = async () => {
+            const playerId = document.getElementById('researcherSelect').value;
+            if (!playerId) return showNotification("Select a researcher!", 'bg-red-600');
+            
+            const player = window.findPlayerById(playerId);
+            if (!player) return showNotification("Player not found!", 'bg-red-600');
+            
+            // Only allow researching for yourself unless in a debug mode
+            if (player.id !== localPlayerId) return showNotification("You can only research for yourself!", 'bg-red-600');
+            
+            if (player.energy < 2) return showNotification(`${player.name} needs 2 Energy to research!`, 'bg-red-600');
+
+            // Find index and update player state
+            const index = window.players.findIndex(p => p.id === playerId);
+            const updatedPlayers = [...window.players];
+            
+            updatedPlayers[index].energy -= 2;
+            updatedPlayers[index].techLevel += 1;
+            updatedPlayers[index].lastUpdate = Date.now();
+
+            await window.saveToDb(updatedPlayers);
+            showNotification(`${player.name} researched new tech! Tech Level is now ${updatedPlayers[index].techLevel}.`, 'bg-indigo-600');
+        };
+
+        // Logic for Crafting
+        window.craftItem = async () => {
+            const playerId = document.getElementById('crafterSelect').value;
+            const schematic = document.getElementById('schematicInput').value.trim();
+            const requiredResource = document.getElementById('resources').value;
+            
+            if (!playerId) return showNotification("Select a crafter!", 'bg-red-600');
+            if (!schematic) return showNotification("Enter a schematic name!", 'bg-red-600');
+            if (requiredResource === 'None') return showNotification("Set a primary world resource first!", 'bg-red-600');
+
+            const player = window.findPlayerById(playerId);
+            if (!player) return showNotification("Player not found!", 'bg-red-600');
+            
+            if (player.id !== localPlayerId) return showNotification("You can only craft for yourself!", 'bg-red-600');
+
+            if (player.energy < 5) return showNotification(`${player.name} needs 5 Energy to craft!`, 'bg-red-600');
+            if (player.techLevel < 3) return showNotification(`${player.name} needs Tech Level 3 to craft complex items!`, 'bg-red-600');
+
+
+            // Find index and update player state
+            const index = window.players.findIndex(p => p.id === playerId);
+            const updatedPlayers = [...window.players];
+            
+            updatedPlayers[index].energy -= 5;
+            updatedPlayers[index].inventory.push(`${schematic} (${requiredResource})`);
+            updatedPlayers[index].lastUpdate = Date.now();
+
+            await window.saveToDb(updatedPlayers);
+            showNotification(`${player.name} crafted ${schematic} using ${requiredResource}!`, 'bg-green-600');
+        };
+
+        window.checkCraftingOptions = () => {
+            const resource = document.getElementById('resources').value;
+            document.getElementById('craftingStatus').innerText = `Resource: ${resource}`;
+        };
+
+        // Logic for 1v1 Battle
+        window.updateBattleOdds = () => {
+            const p1Id = document.getElementById('p1Select').value;
+            const p2Id = document.getElementById('p2Select').value;
+            const p1 = window.findPlayerById(p1Id);
+            const p2 = window.findPlayerById(p2Id);
+            
+            let p1Level = p1 ? p1.techLevel : 0;
+            let p2Level = p2 ? p2.techLevel : 0;
+
+            if (p1Id === p2Id && p1Id !== "") {
+                document.getElementById('oddsDisplay').innerText = "ERROR: Cannot battle yourself!";
+                return;
+            }
+
+            // Calculate odds based on tech level difference (simplified, max 80%)
+            let diff = p1Level - p2Level;
+            let baseOdd = 50;
+            let adjustment = Math.min(30, Math.abs(diff) * 5); // 5% per level, max 30%
+            
+            let p1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
+            let p2Odd = 100 - p1Odd;
+
+            document.getElementById('oddsDisplay').innerText = `Odds: P1 (${p1Odd}%) vs P2 (${p2Odd}%)`;
+        };
+
+        window.battleFlip = async () => {
+            const p1Id = document.getElementById('p1Select').value;
+            const p2Id = document.getElementById('p2Select').value;
+            const p1 = window.findPlayerById(p1Id);
+            const p2 = window.findPlayerById(p2Id);
+            
+            if (!p1 || !p2 || p1Id === p2Id) {
+                return showNotification("Select two unique players for the battle!", 'bg-red-600');
+            }
+
+            // Recalculate odds to use for the flip
+            let diff = p1.techLevel - p2.techLevel;
+            let baseOdd = 50;
+            let adjustment = Math.min(30, Math.abs(diff) * 5);
+            let p1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
+
+            const coin = document.getElementById('coin');
+            coin.style.transition = 'none';
+            coin.style.transform = 'rotateY(0deg)';
+            
+            // Wait for render
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            // Determine winner based on odds
+            const random = Math.random() * 100;
+            const winnerId = (random < p1Odd) ? p1Id : p2Id;
+            const winnerName = (winnerId === p1Id) ? p1.name : p2.name;
+            const flipResult = (winnerId === p1Id) ? 'heads' : 'tails';
+
+            // Update local state
+            const newBattleState = {
+                ...battleState,
+                lastBattleId: battleState.lastBattleId + 1,
+                result: flipResult,
+                winner: winnerId
+            };
+            if (winnerId === p1Id) {
+                newBattleState.p1 += 1;
+            } else {
+                newBattleState.p2 += 1;
+            }
+
+            // Save to DB (this also triggers the animation for all synced users)
+            await window.saveToDb(window.players, newBattleState);
+        };
+
+        // Logic for 2v2 Battle
+        window.updateDuoBattleOdds = () => {
+            const t1p1 = window.findPlayerById(document.getElementById('t1p1Select').value);
+            const t1p2 = window.findPlayerById(document.getElementById('t1p2Select').value);
+            const t2p1 = window.findPlayerById(document.getElementById('t2p1Select').value);
+            const t2p2 = window.findPlayerById(document.getElementById('t2p2Select').value);
+
+            let t1Level = (t1p1 ? t1p1.techLevel : 0) + (t1p2 ? t1p2.techLevel : 0);
+            let t2Level = (t2p1 ? t2p1.techLevel : 0) + (t2p2 ? t2p2.techLevel : 0);
+            
+            // Check for duplicate players across teams
+            const allPlayers = [t1p1, t1p2, t2p1, t2p2].filter(p => p);
+            const playerIds = allPlayers.map(p => p.id);
+            if (new Set(playerIds).size !== playerIds.length) {
+                document.getElementById('duoOddsDisplay').innerText = "ERROR: Duplicate players detected!";
+                return;
+            }
+
+            let diff = t1Level - t2Level;
+            let baseOdd = 50;
+            let adjustment = Math.min(30, Math.abs(diff) * 3); // Slightly less weight for team battles
+            
+            let t1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
+            let t2Odd = 100 - t1Odd;
+
+            document.getElementById('duoOddsDisplay').innerText = `Odds: Team 1 (${t1Odd}%) vs Team 2 (${t2Odd}%)`;
+        };
+
+        window.duoBattleFlip = async () => {
+            const t1p1 = window.findPlayerById(document.getElementById('t1p1Select').value);
+            const t1p2 = window.findPlayerById(document.getElementById('t1p2Select').value);
+            const t2p1 = window.findPlayerById(document.getElementById('t2p1Select').value);
+            const t2p2 = window.findPlayerById(document.getElementById('t2p1Select').value);
+
+            if (!t1p1 || !t2p1) { // At least one player per team
+                return showNotification("Select at least P1 for Team 1 and P3 for Team 2!", 'bg-red-600');
+            }
+
+            let t1Level = (t1p1 ? t1p1.techLevel : 0) + (t1p2 ? t1p2.techLevel : 0);
+            let t2Level = (t2p1 ? t2p1.techLevel : 0) + (t2p2 ? t2p2.techLevel : 0);
+            
+            let diff = t1Level - t2Level;
+            let baseOdd = 50;
+            let adjustment = Math.min(30, Math.abs(diff) * 3);
+            let t1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
+
+            const coin = document.getElementById('duoCoin');
+            coin.style.transition = 'none';
+            coin.style.transform = 'rotateY(0deg)';
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            const random = Math.random() * 100;
+            const winnerTeam = (random < t1Odd) ? 't1' : 't2';
+            const flipResult = (winnerTeam === 't1') ? 'heads' : 'tails';
+
+            const newDuoBattleState = {
+                ...duoBattleState,
+                lastBattleId: duoBattleState.lastBattleId + 1,
+                result: flipResult,
+                winner: winnerTeam
+            };
+            if (winnerTeam === 't1') {
+                newDuoBattleState.t1 += 1;
+            } else {
+                newDuoBattleState.t2 += 1;
+            }
+
+            await window.saveToDb(window.players, battleState, newDuoBattleState);
+        };
+
+        window.resetBattle = async () => {
+            const newBattleState = { p1: 0, p2: 0, lastBattleId: battleState.lastBattleId, result: null, winner: null };
+            await window.saveToDb(window.players, newBattleState, duoBattleState);
+            showNotification("1v1 Score Reset!", 'bg-slate-600');
+        };
+
+        window.resetDuoBattle = async () => {
+            const newDuoBattleState = { t1: 0, t2: 0, lastBattleId: duoBattleState.lastBattleId, result: null, winner: null };
+            await window.saveToDb(window.players, battleState, newDuoBattleState);
+            showNotification("2v2 Score Reset!", 'bg-slate-600');
+        };
+
+        window.triggerBattleAnimation = (newState, coinId, resultDisplayId, isDuo = false) => {
+            const coin = document.getElementById(coinId);
+            const resultDisplay = document.getElementById(resultDisplayId);
+            const team1Name = isDuo ? 'Team 1 (Blue)' : 'P1';
+            const team2Name = isDuo ? 'Team 2 (Red)' : 'P2';
+
+            coin.style.transition = 'none';
+            coin.style.transform = 'rotateY(0deg)';
+
+            // Force a reflow
+            void coin.offsetWidth; 
+
+            coin.style.transition = 'transform 1.5s cubic-bezier(0.4, 2.5, 0.55, 0.5)';
+            
+            // Rotate the coin to show the result (Heads/P1 = 0deg, Tails/P2 = 180deg)
+            if (newState.result === 'heads') {
+                coin.style.transform = 'rotateY(3600deg)';
+            } else {
+                coin.style.transform = 'rotateY(3780deg)'; // 3600 + 180
+            }
+
+            resultDisplay.innerText = '';
+            
+            setTimeout(() => {
+                let winnerText = isDuo 
+                    ? (newState.winner === 't1' ? team1Name : team2Name)
+                    : (newState.winner === document.getElementById('p1Select').value ? team1Name : team2Name);
+                
+                // Fallback for 1v1 if player names are not available yet (e.g. fresh start)
+                if (!isDuo && !winnerText) {
+                    const p1 = window.findPlayerById(document.getElementById('p1Select').value);
+                    const p2 = window.findPlayerById(document.getElementById('p2Select').value);
+                    if (p1 && p2) {
+                        winnerText = (newState.winner === p1.id) ? p1.name : p2.name;
+                    }
+                }
+                
+                resultDisplay.innerText = `${winnerText} WINS!`;
+                
+                // Clear the result after a few seconds
+                setTimeout(() => {
+                    resultDisplay.innerText = '';
+                }, 4000);
+
+            }, 1800); // After animation completes
+        };
+
+        window.switchBattleMode = (mode) => {
+            document.getElementById('battleGUI_1v1').classList.toggle('hidden', mode !== '1v1');
+            document.getElementById('battleGUI_2v2').classList.toggle('hidden', mode !== '2v2');
+            
+            document.getElementById('btn1v1').classList.toggle('bg-yellow-600', mode === '1v1');
+            document.getElementById('btn1v1').classList.toggle('bg-slate-700', mode !== '1v1');
+            document.getElementById('btn1v1').classList.toggle('text-white', mode === '1v1');
+            document.getElementById('btn1v1').classList.toggle('text-slate-300', mode !== '1v1');
+
+            document.getElementById('btn2v2').classList.toggle('bg-yellow-600', mode === '2v2');
+            document.getElementById('btn2v2').classList.toggle('bg-slate-700', mode !== '2v2');
+            document.getElementById('btn2v2').classList.toggle('text-white', mode === '2v2');
+            document.getElementById('btn2v2').classList.toggle('text-slate-300', mode !== '2v2');
+        }
+
 
         // --- FIREBASE CONFIG CHECK & INITIALIZATION ---
-        const DUMMY_KEY = "local-dummy-key";
-        const DEFAULT_FIREBASE_CONFIG = { apiKey: DUMMY_KEY, authDomain: "local-dummy.firebaseapp.com", projectId: "local-dummy-project" };
-        
         const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
-        const finalConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : DEFAULT_FIREBASE_CONFIG;
-        
-        // CHECK: If the apiKey is clearly invalid/short, we treat Firebase as unavailable.
-        let isFirebaseAvailable = (finalConfig.apiKey && finalConfig.apiKey.length > 20 && finalConfig.apiKey !== DUMMY_KEY); 
         
         let app, auth, db, appId;
         let currentUser = null;
@@ -32,87 +450,56 @@
         let localPlayerName = ''; 
         let currentRealmId = null;
         let unsubscribe = null;
+        let analytics = null;
 
         // Global State (Synced)
-        let players = [];
+        window.players = [];
         let battleState = { p1: 0, p2: 0, lastBattleId: 0, result: null, winner: null };
         let duoBattleState = { t1: 0, t2: 0, lastBattleId: 0, result: null, winner: null };
         
-        window.players = players; 
-
-        if (isFirebaseAvailable) {
-            try {
-                app = initializeApp(finalConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-                appId = window.__app_id || 'default-app';
-                setLogLevel('debug');
-                console.log("Firebase initialized successfully.");
-
-            } catch (e) {
-                 // Catch any synchronous initialization errors (like malformed config)
-                 console.error("Firebase initialization failed during setup:", e);
-                 isFirebaseAvailable = false;
-            }
-        } else {
-             console.warn("Firebase config invalid or missing. Running in local/fallback mode.");
-        }
-
-
         // --- AUTH & LOBBY ---
         async function initAuth() {
             document.getElementById('loadingAuth').classList.remove('hidden');
             
-            if (!isFirebaseAvailable || !auth) {
-                // FALLBACK: Local Mode (Invalid Config)
-                localPlayerId = crypto.randomUUID(); 
-                document.getElementById('currentUserId').innerText = localPlayerId.substring(0, 8) + '... (Local)';
-                document.getElementById('lobbyScreen').classList.remove('hidden');
-                document.getElementById('loadingAuth').classList.add('hidden');
-                document.getElementById('localModeWarning').classList.remove('hidden'); 
-                // Explicitly show the failure message as a notification for a moment
-                showNotification("Authentication Failed. Multiplayer Sync is Disabled.", 'bg-red-800');
-                console.log("Running in local/fallback mode. Sync is disabled.");
-                return;
-            }
-
-            // ATTEMPT AUTH
             try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                analytics = getAnalytics(app); // Initialize analytics
+                appId = window.__app_id || firebaseConfig.projectId;
+                
+                setLogLevel('error');
+                console.log("Firebase initialized successfully. App ID:", appId);
+
+                // Check for existing token or sign in anonymously
                 if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token.length > 0) {
                     await signInWithCustomToken(auth, window.__initial_auth_token);
                 } else {
                     await signInAnonymously(auth);
                 }
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        currentUser = user;
+                        localPlayerId = user.uid;
+                        document.getElementById('currentUserId').innerText = localPlayerId;
+                        document.getElementById('lobbyScreen').classList.remove('hidden');
+                        document.getElementById('loadingAuth').classList.add('hidden');
+                    }
+                });
+
             } catch (error) {
-                console.error("Firebase Auth failed:", error.code, error.message);
-                
-                // AUTH FAILED: Switch to local mode and inform the user
+                console.error("Firebase Initialization or Auth Failed:", error);
+                // Fallback to local mode
                 isFirebaseAvailable = false;
-                localPlayerId = crypto.randomUUID(); 
+                localPlayerId = crypto.randomUUID();
                 document.getElementById('currentUserId').innerText = localPlayerId.substring(0, 8) + '... (Local)';
                 document.getElementById('lobbyScreen').classList.remove('hidden');
                 document.getElementById('loadingAuth').classList.add('hidden');
                 document.getElementById('localModeWarning').classList.remove('hidden'); 
-                // Explicitly show the failure message as a notification for a moment
-                showNotification("Authentication Failed. Multiplayer Sync is Disabled.", 'bg-red-800');
-                return;
+                showNotification("Auth Failed. Running Offline.", 'bg-red-800');
             }
         }
-
-        // Auth State Listener runs after successful sign-in or session loading
-        if (isFirebaseAvailable) {
-            onAuthStateChanged(auth, (user) => {
-                if (user && isFirebaseAvailable) {
-                    currentUser = user;
-                    localPlayerId = user.uid; // Use UID as the unique player ID
-                    document.getElementById('currentUserId').innerText = localPlayerId;
-                    document.getElementById('lobbyScreen').classList.remove('hidden');
-                    document.getElementById('loadingAuth').classList.add('hidden');
-                }
-                // Note: If user is null, the screen stays in 'loadingAuth' until initAuth finishes/falls back.
-            });
-        }
-
 
         window.joinRealm = async () => {
             const code = document.getElementById('realmCodeInput').value.trim().toUpperCase();
@@ -129,40 +516,32 @@
             document.getElementById('realmDisplay').innerText = `Realm: ${code} | Player: ${localPlayerName}`;
             document.getElementById('currentArchitectName').innerText = localPlayerName; 
             
-            // In local mode, localPlayerId is ready immediately. In Firebase mode, it's ready via onAuthStateChanged.
-            // We can now safely call the listener setup.
             setupRealtimeListener();
         };
 
         // --- REALTIME DATABASE LISTENER ---
         function setupRealtimeListener() {
-            // Player initialization for local mode must happen here if no sync is available
-            if (!isFirebaseAvailable) {
+            if (!auth.currentUser) {
+                 // Offline mode handling
                  document.getElementById('realmDisplay').innerText = `Realm: ${currentRealmId} (Local Only)`;
-                 
-                 // Initialize players list if empty (only for the first time in local mode)
                  if (window.players.length === 0) {
                      window.players.push({
-                        id: localPlayerId,
-                        name: localPlayerName,
-                        energy: 10,
-                        techLevel: 0,
-                        inventory: [],
-                        lastUpdate: Date.now(),
-                        worldData: null
-                    });
+                         id: localPlayerId,
+                         name: localPlayerName,
+                         energy: 10,
+                         techLevel: 0,
+                         inventory: [],
+                         lastUpdate: Date.now(),
+                         worldData: null
+                     });
                  }
                  window.renderPlayers();
                  window.updateSelects();
                  return;
             }
 
-            if (!localPlayerId || !currentRealmId || !db || !appId) {
-                 console.error("Cannot set up listener: Missing credentials or database instance.");
-                 return;
-            }
-
             // Sync Path: artifacts/{appId}/public/data/realm_{realmId}
+            // Note: using 'realm_' + code to avoid collision with other collections
             const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
 
             unsubscribe = onSnapshot(realmRef, (docSnap) => {
@@ -186,20 +565,26 @@
                     localPlayers.push(currentPlayer);
                     needsUpdate = true;
                 } else if (currentPlayer.name !== localPlayerName) {
-                    // Update name if the local name has changed (e.g., first entry)
-                    currentPlayer.name = localPlayerName;
-                    needsUpdate = true;
+                    // Update name if the local name has changed
+                    localPlayers = localPlayers.map(p => {
+                        if (p.id === localPlayerId) {
+                             if (p.name !== localPlayerName) {
+                                needsUpdate = true;
+                                return { ...p, name: localPlayerName };
+                             }
+                        }
+                        return p;
+                    });
                 }
 
                 if (needsUpdate) {
-                    // Save the updated list back immediately to create the entry or update the name
-                    // Pass current battle states to ensure they aren't overwritten on creation
+                    // Save and wait for next snapshot
                     window.saveToDb(localPlayers, data.battleState, data.duoBattleState, true);
-                    return; // Wait for the new snapshot with the updated player list
+                    return; 
                 }
                 
                 // 2. Sync Global State
-                window.players = localPlayers; // Update the global variable
+                window.players = localPlayers;
                 
                 // Sync 1v1 Battle
                 if (data.battleState) {
@@ -241,20 +626,19 @@
             }, (error) => {
                 console.error("Sync Error:", error);
                 document.getElementById('realmDisplay').innerText = `Realm: ${currentRealmId} (Sync Failed!)`;
+                showNotification("Sync Failed: Check Permissions", 'bg-red-800');
             });
         }
 
         // --- SYNC ACTIONS ---
-        // Added exponential backoff retry logic to the save function for robustness
         window.saveToDb = async (newPlayers, newBattleState = null, newDuoBattleState = null, initialCreate = false, attempt = 0) => {
-            if (!isFirebaseAvailable) {
-                // Local Mode Save (simulated)
+            if (!auth.currentUser) {
+                // Local Mode
                 window.players = newPlayers;
                 if (newBattleState) battleState = newBattleState;
                 if (newDuoBattleState) duoBattleState = newDuoBattleState;
                 window.renderPlayers();
                 window.updateSelects();
-                showNotification("Local save successful.", 'bg-blue-600');
                 return;
             }
 
@@ -274,15 +658,16 @@
                 }
             } catch (e) {
                 if (attempt < MAX_RETRIES) {
-                    const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+                    const delay = Math.pow(2, attempt) * 1000;
                     await new Promise(resolve => setTimeout(resolve, delay));
                     return window.saveToDb(newPlayers, newBattleState, newDuoBattleState, initialCreate, attempt + 1);
                 }
                 console.error("Save failed after multiple retries:", e);
-                showNotification("Save failed. Check console for error.", 'bg-red-800');
+                showNotification("Save failed. Check console.", 'bg-red-800');
             }
         };
 
+        // Start Auth Process
         initAuth();
     </script>
 
@@ -307,7 +692,7 @@
             
             <!-- WARNING MESSAGE FOR LOCAL MODE / AUTH FAILURE -->
             <div id="localModeWarning" class="hidden bg-red-900/50 text-red-300 p-3 rounded-lg mb-4 border border-red-700">
-                <i class="fa-solid fa-cloud-exclamation mr-2"></i> Sync Disabled (Running in Local Mode)
+                <i class="fa-solid fa-cloud-exclamation mr-2"></i> Sync Disabled (Running in Local Mode) - User ID: <span id="currentUserId" class="font-mono text-xs"></span>
             </div>
             <!-- END WARNING -->
 
@@ -316,10 +701,10 @@
             <p class="text-slate-400 mb-6">Multiplayer Edition</p>
 
             <input type="text" id="playerNameInput" placeholder="Enter Your Player Name" 
-                   class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-center text-lg mb-4 font-bold focus:ring-2 focus:ring-indigo-500 outline-none">
+                    class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-center text-lg mb-4 font-bold focus:ring-2 focus:ring-indigo-500 outline-none">
             
             <input type="text" id="realmCodeInput" placeholder="Enter Realm Name (e.g. WARZONE)" 
-                   class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-center text-lg mb-4 uppercase font-bold tracking-widest focus:ring-2 focus:ring-yellow-500 outline-none">
+                    class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-center text-lg mb-4 uppercase font-bold tracking-widest focus:ring-2 focus:ring-yellow-500 outline-none">
             
             <button onclick="window.joinRealm()" class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded-lg transition-colors">
                 ENTER REALM
@@ -400,6 +785,11 @@
                             <h3 class="text-lg font-bold text-white mb-2"><i class="fa-solid fa-floppy-disk mr-2"></i>Save Country to <span class="text-yellow-300" id="currentArchitectName">Player</span></h3>
                             <button type="button" onclick="saveWorldToPlayer()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-md shadow-lg transition-colors">Save Realm Data</button>
                             <p class="text-xs text-slate-400 mt-2">Saves the current form data to your synced player entry.</p>
+                            
+                            <div class="mt-4 p-3 bg-slate-900 rounded-lg">
+                                <h4 class="text-sm font-semibold text-white mb-1">My Saved World Data:</h4>
+                                <div id="worldDataPreview"></div>
+                            </div>
                         </div>
 
                         <!-- CRAFTING -->
@@ -427,6 +817,24 @@
 
             <!-- Right Column: Battle & Tracker -->
             <aside class="space-y-6">
+                 <!-- Player Tracker -->
+                <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-xl">
+                    <div class="flex items-center gap-2 mb-4 border-b border-slate-700 pb-4">
+                        <i class="fa-solid fa-user-group text-green-400 text-xl"></i>
+                        <h2 class="text-xl font-bold text-white">Player Tracker</h2>
+                    </div>
+                    
+                    <div class="flex justify-between text-sm font-semibold mb-3 p-3 bg-slate-700 rounded-lg border border-green-500/50">
+                        <span>My Energy: <span id="myEnergyDisplay" class="text-yellow-400">10</span> ⚡</span>
+                        <span>My Tech Level: <span id="myTechLevelDisplay" class="text-indigo-400">0</span></span>
+                    </div>
+
+                    <ul id="playerList" class="space-y-2 max-h-60 overflow-y-auto">
+                        <!-- Player list will be rendered here -->
+                        <li class="text-slate-500 text-center text-sm">Loading Players...</li>
+                    </ul>
+                </div>
+                
                 <!-- Battle Arena -->
                 <div class="bg-slate-800 rounded-xl p-1 border-2 border-yellow-600/50 shadow-2xl overflow-hidden">
                     <div class="bg-slate-900 p-4 rounded-lg text-center">
@@ -490,463 +898,22 @@
                                 <div class="text-2xl font-bold text-white mt-1" id="t2Score">0</div>
                             </div>
 
-                            <div class="coin-container h-24 flex items-center justify-center mb-2">
-                                <div id="duoCoin" class="coin" style="width:80px; height:80px;">
-                                    <div class="side-heads border-indigo-500 text-indigo-900 text-xl"><i class="fa-solid fa-users"></i></div>
-                                    <div class="side-tails border-red-500 text-red-900 text-xl"><i class="fa-solid fa-users-slash"></i></div>
+                             <div class="coin-container h-40 flex items-center justify-center mb-4">
+                                <div id="duoCoin" class="coin">
+                                    <div class="side-heads border-indigo-500 text-indigo-900"><i class="fa-solid fa-shield"></i></div>
+                                    <div class="side-tails border-red-500 text-red-900"><i class="fa-solid fa-explosion"></i></div>
                                 </div>
                             </div>
-
-                            <div class="text-xs text-slate-400 mb-2" id="duoOddsDisplay">Odds: 50% vs 50%</div>
+                            <div class="text-xs text-slate-400 mb-4" id="duoOddsDisplay">Odds: 50% vs 50%</div>
                             <div id="duoBattleResult" class="h-6 text-sm font-bold text-yellow-400 mb-2"></div>
 
-                            <button onclick="duoBattleFlip()" id="duoBattleBtn" class="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg border-b-4 border-slate-800 active:border-b-0 active:mt-1 transition-all uppercase tracking-wider text-sm">TEAM FIGHT!</button>
-                            <button onclick="resetDuoBattle()" class="text-xs text-slate-500 mt-2 hover:text-white underline">Reset 2v2 Score</button>
+                            <button onclick="duoBattleFlip()" id="duoBattleBtn" class="w-full bg-gradient-to-r from-yellow-700 to-yellow-600 hover:from-yellow-600 text-white font-bold py-3 px-8 rounded-lg border-b-4 border-yellow-800 active:border-b-0 active:mt-1 transition-all uppercase tracking-wider">INITIATE SQUAD WAR!</button>
+                            <button onclick="resetDuoBattle()" class="text-xs text-slate-500 mt-4 hover:text-white underline">Reset Score</button>
                         </div>
-
-                    </div>
-                </div>
-
-                <!-- Energy Tracker -->
-                <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-xl relative">
-                    <h2 class="text-xl font-bold text-white mb-4"><i class="fa-solid fa-bolt text-yellow-400"></i> Live Player Stats</h2>
-                    <div id="playerList" class="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                         <div class="text-center text-slate-500 italic py-4">Waiting for realm data...</div>
-                    </div>
-                    <div class="mt-4 pt-4 border-t border-slate-700">
-                        <button onclick="increaseTechLevel()" class="w-full bg-indigo-700 hover:bg-indigo-600 text-white font-bold py-2 rounded text-sm">
-                            <i class="fa-solid fa-arrow-up-to-line mr-2"></i> Spend 10 Energy for +1 Tech Level (Self)
-                        </button>
                     </div>
                 </div>
             </aside>
         </main>
-
-        <!-- FOOTER -->
-        <footer class="bg-slate-900/50 mt-8 py-4 border-t border-slate-700">
-            <div class="container mx-auto px-4 text-center text-slate-500 text-xs">
-                Player ID: <span class="font-mono text-white text-[10px]" id="currentUserId">N/A</span>
-            </div>
-        </footer>
     </div>
-
-    <!-- INVENTORY MODAL -->
-    <div id="inventoryModal" class="fixed inset-0 z-[100] hidden flex items-center justify-center bg-slate-900/90 backdrop-blur-sm">
-        <div class="bg-slate-800 rounded-xl border-2 border-indigo-500 p-6 w-full max-w-md relative shadow-2xl shadow-indigo-500/20">
-            <button onclick="document.getElementById('inventoryModal').classList.add('hidden')" class="absolute top-2 right-3 text-slate-400 hover:text-white"><i class="fa-solid fa-times text-xl"></i></button>
-            <div class="text-center mb-6">
-                <h3 class="text-2xl font-bold text-white fantasy-font" id="invModalTitle">Player's Inventory</h3>
-                <p class="text-xs text-indigo-300 uppercase tracking-widest">Weaponry & Artifacts</p>
-            </div>
-            <div id="inventoryList" class="space-y-3 max-h-[400px] overflow-y-auto pr-2"></div>
-        </div>
-    </div>
-
-    <script>
-        // --- LOGIC SECTION ---
-        const formFields = ['terrain', 'resources', 'climate', 'countryName', 'capitalCity', 'language', 'export', 'culture', 'history', 'unique'];
-        let currentRotation = 0;
-        let currentDuoRotation = 0;
-
-        // Display initial ID placeholder (will be overwritten by initAuth)
-        if (window.localPlayerId) {
-            document.getElementById('currentUserId').innerText = window.localPlayerId.substring(0, 8) + '... (Local)';
-        }
-
-        function checkCraftingOptions() {
-            const res = document.getElementById('resources').value;
-            document.getElementById('craftingStatus').innerText = `Resource: ${res}`;
-        }
-
-        // --- PLAYER FUNCTIONS ---
-        window.saveWorldToPlayer = () => {
-            if (!localPlayerId || !localPlayerName) return showNotification("Must join a realm with a name first!", 'bg-red-600');
-            
-            let localPlayers = [...window.players]; 
-            let pIndex = localPlayers.findIndex(p => p.id === localPlayerId);
-            
-            // If running in local mode and player wasn't added yet (safety check)
-            if (pIndex === -1) {
-                const newPlayer = {
-                    id: localPlayerId,
-                    name: localPlayerName,
-                    energy: 10,
-                    techLevel: 0,
-                    inventory: [],
-                    lastUpdate: Date.now(),
-                    worldData: null
-                };
-                localPlayers.push(newPlayer);
-                pIndex = localPlayers.length - 1;
-                showNotification("Player created locally. Start saving!", 'bg-blue-600');
-            }
-
-            const p = localPlayers[pIndex];
-            
-            let data = {};
-            formFields.forEach(f => data[f] = document.getElementById(f).value);
-            p.worldData = data;
-            
-            window.saveToDb(localPlayers);
-            showNotification(`World saved to ${localPlayerName}! ${isFirebaseAvailable ? 'Syncing...' : '(Local Save)'}`, 'bg-indigo-600');
-        };
-
-        window.loadPlayerWorldData = (id) => {
-            const p = window.players.find(p => p.id === id);
-            if (!p || !p.worldData) return showNotification("No world data available for this player.", 'bg-red-600');
-            formFields.forEach(f => {
-                const el = document.getElementById(f);
-                if(el && p.worldData[f]) el.value = p.worldData[f];
-            });
-            document.getElementById('currentArchitectName').innerText = p.name;
-            checkCraftingOptions();
-            showNotification(`Loaded ${p.name}'s world data.`, 'bg-green-600');
-        };
-
-        window.increaseTechLevel = () => {
-            if (!localPlayerId) return showNotification("Cannot perform action. Player identity is missing.", 'bg-red-600');
-
-            let localPlayers = [...window.players];
-            const pIndex = localPlayers.findIndex(p => p.id === localPlayerId);
-            if(pIndex === -1) return showNotification("Your player entry not found in realm.", 'bg-red-600');
-            
-            const p = localPlayers[pIndex];
-
-            if(p.energy < 10) return showNotification("Insufficient Energy! Need 10 Energy to increase Tech Level!", 'bg-red-600');
-            
-            p.energy -= 10;
-            p.techLevel += 1;
-            window.saveToDb(localPlayers);
-            showNotification(`${p.name} gained +1 Tech Level!`, 'bg-indigo-600');
-        };
-
-        window.viewInventory = (id) => {
-            const p = window.players.find(p => p.id === id);
-            if (!p) return;
-            const modal = document.getElementById('inventoryModal');
-            const list = document.getElementById('inventoryList');
-            const title = document.getElementById('invModalTitle');
-            title.innerText = `${p.name}'s Inventory`;
-            list.innerHTML = '';
-            if (!p.inventory || p.inventory.length === 0) {
-                list.innerHTML = `<div class="text-center text-slate-500 italic py-4">This backpack is empty. Time to craft!</div>`;
-            } else {
-                p.inventory.forEach(item => {
-                    list.innerHTML += `
-                        <div class="flex justify-between items-center bg-slate-900/80 p-3 rounded border border-slate-700">
-                            <div class="flex items-center gap-3">
-                                <div class="bg-indigo-900/50 w-8 h-8 rounded flex items-center justify-center text-indigo-400"><i class="fa-solid fa-hammer"></i></div>
-                                <span class="text-white font-bold text-sm">${item.name}</span>
-                            </div>
-                            <span class="text-xs font-mono bg-slate-800 text-yellow-500 px-2 py-1 rounded border border-slate-600">PWR: ${item.power}</span>
-                        </div>`;
-                });
-            }
-            modal.classList.remove('hidden');
-        };
-
-        // --- CRAFTING & RESEARCH ---
-        window.conductResearch = () => {
-            const id = document.getElementById('researcherSelect').value;
-            let localPlayers = [...window.players];
-            const pIndex = localPlayers.findIndex(p => p.id === id);
-            const p = localPlayers[pIndex];
-
-            if(!p) return showNotification("Select a player to conduct research.", 'bg-red-600');
-            if(p.energy < 2) return showNotification("Insufficient Energy! Need 2.", 'bg-red-600');
-            
-            p.energy -= 2;
-            p.techLevel += 1;
-            window.saveToDb(localPlayers);
-            showNotification(`${p.name} advanced to Tech Lvl ${p.techLevel}!`, 'bg-indigo-600');
-        };
-
-        window.craftItem = () => {
-            const id = document.getElementById('crafterSelect').value;
-            const itemName = document.getElementById('schematicInput').value.trim();
-            const resource = document.getElementById('resources').value;
-            let localPlayers = [...window.players];
-            const pIndex = localPlayers.findIndex(p => p.id === id);
-            const p = localPlayers[pIndex];
-            
-            if(!p || !itemName) return showNotification("Please select a crafter and provide a weapon name.", 'bg-red-600');
-            if(p.energy < 5) return showNotification("Insufficient Energy! Need 5 to craft.", 'bg-red-600');
-            
-            const forbidden = ["god", "nuke", "admin", "infinite", "death star", "creative", "kill all", "instant", "win", "invincible", "omni", "void", "black hole", "galaxy", "universe", "hack", "destroyer", "absolute"];
-            if (forbidden.some(w => itemName.toLowerCase().includes(w))) return showNotification("The gods reject this creation! (Weapon name too powerful/OP)", 'bg-red-600');
-
-            let base = 1;
-            if (resource === "Wood") base=3; else if (resource === "Metal") base=6; else if (resource==="Mana") base=8;
-            const power = Math.max(1, base + (Math.floor(Math.random()*3)-1));
-
-            p.energy -= 5;
-            p.inventory = p.inventory || [];
-            p.inventory.push({ name: itemName, power: power });
-            document.getElementById('schematicInput').value = "";
-            window.saveToDb(localPlayers);
-            showNotification(`${itemName} crafted with Power ${power}!`, 'bg-green-600');
-        };
-
-        // --- BATTLE LOGIC ---
-        function calculatePower(p) {
-            if(!p) return 0;
-            return (p.techLevel*2) + (p.inventory || []).reduce((sum, i) => sum + i.power, 0);
-        }
-
-        window.switchBattleMode = (mode) => {
-            document.getElementById('battleGUI_1v1').classList.add('hidden');
-            document.getElementById('battleGUI_2v2').classList.add('hidden');
-            document.getElementById('btn1v1').className = "px-3 py-1 text-xs font-bold bg-slate-700 text-slate-300 rounded hover:bg-slate-600";
-            document.getElementById('btn2v2').className = "px-3 py-1 text-xs font-bold bg-slate-700 text-slate-300 rounded hover:bg-slate-600";
-            
-            if(mode === '1v1') {
-                document.getElementById('battleGUI_1v1').classList.remove('hidden');
-                document.getElementById('btn1v1').className = "px-3 py-1 text-xs font-bold bg-yellow-600 text-white rounded";
-            } else {
-                document.getElementById('battleGUI_2v2').classList.remove('hidden');
-                document.getElementById('btn2v2').className = "px-3 py-1 text-xs font-bold bg-yellow-600 text-white rounded";
-            }
-        };
-
-        // 1v1
-        window.updateBattleOdds = () => {
-            const p1Id = document.getElementById('p1Select').value;
-            const p2Id = document.getElementById('p2Select').value;
-            if(!p1Id || !p2Id) {
-                document.getElementById('oddsDisplay').innerText = `Odds: 50% vs 50%`;
-                return 50;
-            }
-            const p1 = window.players.find(p => p.id == p1Id);
-            const p2 = window.players.find(p => p.id == p2Id);
-            if(!p1 || !p2) return 50;
-            const diff = calculatePower(p1) - calculatePower(p2);
-            let chance = 50 + (diff * 2);
-            chance = Math.max(10, Math.min(90, chance));
-            document.getElementById('oddsDisplay').innerText = `${p1.name}: ${Math.round(chance)}% | ${p2.name}: ${Math.round(100-chance)}%`;
-            return chance;
-        };
-
-        window.battleFlip = () => {
-             const p1Id = document.getElementById('p1Select').value;
-             const p2Id = document.getElementById('p2Select').value;
-             const p1ScoreTxt = document.getElementById('p1Score').innerText;
-             const p2ScoreTxt = document.getElementById('p2Score').innerText;
-             if(!p1Id || !p2Id) return showNotification("Select two players for the duel!", 'bg-red-600');
-             if(parseInt(p1ScoreTxt) >= 10 || parseInt(p2ScoreTxt) >= 10) return showNotification("Score limit reached. Reset the score to start a new game!", 'bg-yellow-600');
-             
-             const chance = window.updateBattleOdds();
-             const p1Wins = (Math.random() * 100) <= chance;
-             
-             const newState = { 
-                 p1Id: p1Id, 
-                 p2Id: p2Id, 
-                 p1: parseInt(p1ScoreTxt) + (p1Wins ? 1 : 0), 
-                 p2: parseInt(p2ScoreTxt) + (p1Wins ? 0 : 1), 
-                 winner: p1Wins ? 'p1' : 'p2', 
-                 lastBattleId: Date.now() 
-             };
-             window.saveToDb(window.players, newState, null);
-        };
-
-        // 2v2 DUO
-        window.updateDuoBattleOdds = () => {
-            const t1p1 = window.players.find(p => p.id == document.getElementById('t1p1Select').value);
-            const t1p2 = window.players.find(p => p.id == document.getElementById('t1p2Select').value);
-            const t2p1 = window.players.find(p => p.id == document.getElementById('t2p1Select').value);
-            const t2p2 = window.players.find(p => p.id == document.getElementById('t2p2Select').value);
-            
-            if(!t1p1 || !t1p2 || !t2p1 || !t2p2) {
-                document.getElementById('duoOddsDisplay').innerText = `Odds: 50% vs 50%`;
-                return 50;
-            }
-
-            const powerT1 = calculatePower(t1p1) + calculatePower(t1p2);
-            const powerT2 = calculatePower(t2p1) + calculatePower(t2p2);
-            
-            const diff = powerT1 - powerT2;
-            let chance = 50 + (diff * 1.5); 
-            chance = Math.max(10, Math.min(90, chance));
-            
-            document.getElementById('duoOddsDisplay').innerText = `Team 1: ${Math.round(chance)}% | Team 2: ${Math.round(100-chance)}%`;
-            return chance;
-        };
-
-        window.duoBattleFlip = () => {
-             const t1p1 = document.getElementById('t1p1Select').value;
-             const t1p2 = document.getElementById('t1p2Select').value;
-             const t2p1 = document.getElementById('t2p1Select').value;
-             const t2p2 = document.getElementById('t2p2Select').value;
-             
-             if(!t1p1 || !t1p2 || !t2p1 || !t2p2) return showNotification("Select four players for the squad battle!", 'bg-red-600');
-
-             const t1ScoreTxt = document.getElementById('t1Score').innerText;
-             const t2ScoreTxt = document.getElementById('t2Score').innerText;
-             
-             if(parseInt(t1ScoreTxt) >= 10 || parseInt(t2ScoreTxt) >= 10) return showNotification("Score limit reached. Reset the score to start a new game!", 'bg-yellow-600');
-
-             const chance = window.updateDuoBattleOdds();
-             const t1Wins = (Math.random() * 100) <= chance;
-             
-             const newState = {
-                 t1: parseInt(t1ScoreTxt) + (t1Wins ? 1 : 0),
-                 t2: parseInt(t2ScoreTxt) + (t1Wins ? 0 : 1),
-                 winner: t1Wins ? 't1' : 't2',
-                 lastBattleId: Date.now()
-             };
-             window.saveToDb(window.players, null, newState);
-        };
-
-        window.resetBattle = () => { 
-            showConfirmation("Reset 1v1 score?", () => window.saveToDb(window.players, { p1: 0, p2: 0, lastBattleId: Date.now(), result: null, winner: null }, null));
-        };
-        window.resetDuoBattle = () => { 
-            showConfirmation("Reset 2v2 score?", () => window.saveToDb(window.players, null, { t1: 0, t2: 0, lastBattleId: Date.now(), result: null, winner: null }));
-        };
-
-        // --- RENDERERS ---
-        window.renderPlayers = () => {
-            const list = document.getElementById('playerList');
-            const currentArchitectNameSpan = document.getElementById('currentArchitectName');
-            list.innerHTML = '';
-
-            // Update Architect Name display (already set in joinRealm, but keeping this safe)
-            if (!currentArchitectNameSpan.innerText || currentArchitectNameSpan.innerText === 'Player') {
-                currentArchitectNameSpan.innerText = localPlayerName || 'Player';
-            }
-            
-            // Render the player list
-            window.players.forEach(p => {
-                const isCurrentPlayer = p.id === localPlayerId;
-                const pow = calculatePower(p);
-                const hasWorld = p.worldData ? '<i class="fa-solid fa-globe text-blue-400" title="Has World Data"></i>' : '';
-                const currentPlayerTag = isCurrentPlayer ? '<span class="text-green-400 text-xs ml-2">[YOU]</span>' : '';
-                
-                list.innerHTML += `
-                    <div class="bg-slate-700/50 p-2 rounded border border-slate-600 text-sm ${isCurrentPlayer ? 'border-2 border-indigo-500/80' : ''}">
-                        <div class="flex justify-between items-center">
-                            <span class="font-bold cursor-pointer hover:text-blue-400 transition-colors" onclick="loadPlayerWorldData('${p.id}')">
-                                ${p.name} ${hasWorld} ${currentPlayerTag}
-                            </span>
-                            <div class="flex gap-2 items-center">
-                                <span class="text-yellow-500 font-mono text-xs" title="Energy"><i class="fa-solid fa-bolt"></i> ${p.energy}</span>
-                                <button onclick="viewInventory('${p.id}')" class="text-indigo-400 hover:text-indigo-300 text-xs bg-slate-800 p-1.5 rounded" title="View Items"><i class="fa-solid fa-backpack"></i></button>
-                            </div>
-                        </div>
-                        <div class="flex justify-between text-xs text-slate-400 mt-2 pt-2 border-t border-slate-600/50">
-                            <span>Tech Lvl: <span class="text-white">${p.techLevel}</span></span>
-                            <span>Battle Power: <span class="text-white">${pow}</span></span>
-                        </div>
-                    </div>
-                `;
-            });
-        };
-
-        window.updateSelects = () => {
-            const opts = window.players.map(p => `<option value="${p.id}">${p.name} (Pwr:${calculatePower(p)})</option>`).join('');
-            const selectIds = ['p1Select', 'p2Select', 'researcherSelect', 'crafterSelect', 't1p1Select', 't1p2Select', 't2p1Select', 't2p2Select'];
-
-            selectIds.forEach(id => {
-                 const el = document.getElementById(id);
-                 if (el) {
-                    const val = el.value;
-                    el.innerHTML = '<option value="">Select</option>' + opts;
-                    // Attempt to preserve selection unless the previous value is no longer valid
-                    if (window.players.some(p => p.id === val)) {
-                         el.value = val;
-                    }
-                 }
-            });
-            window.updateBattleOdds(); 
-            window.updateDuoBattleOdds();
-        };
-
-        window.triggerBattleAnimation = (state, coinId, resultId, isDuo = false) => {
-             const win = isDuo ? (state.winner === 't1') : (state.winner === 'p1');
-             const coin = document.getElementById(coinId);
-             document.getElementById(resultId).innerText = "";
-             
-             let rot = isDuo ? currentDuoRotation : currentRotation;
-             rot += 1800;
-             const rem = rot % 360;
-             
-             if (win) { rot += (360 - rem); } 
-             else { rot += (180 - rem + 360) % 360; } 
-             
-             if(isDuo) currentDuoRotation = rot; else currentRotation = rot;
-             
-             coin.style.transform = `rotateY(${rot}deg)`;
-             
-             setTimeout(() => {
-                 const res = document.getElementById(resultId);
-                 let winnerName = "";
-                 
-                 if(isDuo) {
-                     winnerName = win ? `TEAM 1` : `TEAM 2`;
-                 } else {
-                     const p1 = window.players.find(p => p.id == state.p1Id) || { name: 'P1' };
-                     const p2 = window.players.find(p => p.id == state.p2Id) || { name: 'P2' };
-                     winnerName = win ? p1.name : p2.name;
-                 }
-                 
-                 res.innerText = `${winnerName} WINS!`;
-                 res.className = `h-6 text-sm font-bold ${win ? 'text-indigo-400' : 'text-red-400'} mb-2`;
-             }, 1500);
-        };
-
-        // --- CUSTOM UI MESSAGES (Replaces alert/confirm) ---
-        function showNotification(message, colorClass = 'bg-blue-600') {
-            let notification = document.getElementById('customNotification');
-            if (!notification) {
-                notification = document.createElement('div');
-                notification.id = 'customNotification';
-                notification.className = 'fixed bottom-5 right-5 z-[200] p-4 rounded-lg shadow-2xl text-white font-semibold transition-all duration-300 opacity-0 transform translate-y-full';
-                document.body.appendChild(notification);
-            }
-            
-            notification.className = `fixed bottom-5 right-5 z-[200] p-4 rounded-lg shadow-2xl text-white font-semibold transition-all duration-300 opacity-100 transform translate-y-0 ${colorClass}`;
-            notification.innerHTML = `<i class="fa-solid fa-bell mr-2"></i>${message}`;
-            
-            clearTimeout(notification.timer);
-            notification.timer = setTimeout(() => {
-                notification.classList.remove('opacity-100', 'translate-y-0');
-                notification.classList.add('opacity-0', 'translate-y-full');
-            }, 3000);
-        }
-
-        function showConfirmation(message, onConfirm) {
-            let modal = document.getElementById('customConfirmationModal');
-            if (!modal) {
-                modal = document.createElement('div');
-                modal.id = 'customConfirmationModal';
-                modal.className = 'fixed inset-0 z-[300] hidden flex items-center justify-center bg-slate-900/90 backdrop-blur-sm';
-                modal.innerHTML = `
-                    <div class="bg-slate-800 rounded-xl border-2 border-slate-700 p-8 w-full max-w-sm shadow-2xl text-center">
-                        <i class="fa-solid fa-triangle-exclamation text-yellow-500 text-3xl mb-4"></i>
-                        <p class="text-white font-semibold mb-6" id="confirmMessage"></p>
-                        <div class="flex justify-center gap-4">
-                            <button id="confirmYes" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded transition-colors">Yes</button>
-                            <button id="confirmNo" class="bg-slate-600 hover:bg-slate-500 text-white font-bold py-2 px-6 rounded transition-colors">Cancel</button>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(modal);
-
-                document.getElementById('confirmNo').onclick = () => {
-                    modal.classList.add('hidden');
-                };
-            }
-
-            document.getElementById('confirmMessage').innerText = message;
-            
-            const confirmYesButton = document.getElementById('confirmYes');
-            confirmYesButton.onclick = () => {
-                modal.classList.add('hidden');
-                onConfirm();
-                showNotification("Action confirmed.", 'bg-green-600');
-            };
-
-            modal.classList.remove('hidden');
-        }
-    </script>
 </body>
 </html>
