@@ -7,23 +7,25 @@
     <!-- Tailwind CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght=300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght@3d00;400;600&display=swap" rel="stylesheet">
     
     <!-- Firebase Imports -->
     <script type="module">
+        // 1. Static Imports: Must be at the top of the module script
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- FIREBASE SETUP & GLOBALS ---
+        // --- FIREBASE CONFIG CHECK & INITIALIZATION ---
         const DUMMY_KEY = "local-dummy-key";
         const DEFAULT_FIREBASE_CONFIG = { apiKey: DUMMY_KEY, authDomain: "local-dummy.firebaseapp.com", projectId: "local-dummy-project" };
         
         const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
         const finalConfig = Object.keys(firebaseConfig).length > 0 ? firebaseConfig : DEFAULT_FIREBASE_CONFIG;
         
-        // Assume failure if config is dummy or invalid key is present (which triggers the Firebase error)
-        let isFirebaseAvailable = false;
+        // CHECK: If the apiKey is clearly invalid/short, we treat Firebase as unavailable.
+        let isFirebaseAvailable = (finalConfig.apiKey && finalConfig.apiKey.length > 20 && finalConfig.apiKey !== DUMMY_KEY); 
+        
         let app, auth, db, appId;
         let currentUser = null;
         let localPlayerId = null; 
@@ -38,32 +40,41 @@
         
         window.players = players; 
 
-        try {
-            app = initializeApp(finalConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-            appId = window.__app_id || 'default-app';
-            setLogLevel('debug');
-            isFirebaseAvailable = true;
-        } catch (e) {
-             console.error("Failed to initialize Firebase:", e);
-             // Firebase initialization failed. We proceed in local mode.
-             isFirebaseAvailable = false;
+        if (isFirebaseAvailable) {
+            try {
+                app = initializeApp(finalConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                appId = window.__app_id || 'default-app';
+                setLogLevel('debug');
+                console.log("Firebase initialized successfully.");
+
+            } catch (e) {
+                 // Catch any synchronous initialization errors (like malformed config)
+                 console.error("Firebase initialization failed during setup:", e);
+                 isFirebaseAvailable = false;
+            }
+        } else {
+             console.warn("Firebase config invalid or missing. Running in local/fallback mode.");
         }
+
 
         // --- AUTH & LOBBY ---
         async function initAuth() {
             document.getElementById('loadingAuth').classList.remove('hidden');
             
             if (!isFirebaseAvailable || !auth) {
-                console.warn("Running in local/fallback mode. Firebase sync is disabled.");
-                localPlayerId = crypto.randomUUID(); // Set a persistent ID for local testing
+                // FALLBACK: Local Mode
+                localPlayerId = crypto.randomUUID(); 
+                document.getElementById('currentUserId').innerText = localPlayerId.substring(0, 8) + '... (Local)';
                 document.getElementById('lobbyScreen').classList.remove('hidden');
                 document.getElementById('loadingAuth').classList.add('hidden');
-                document.getElementById('localModeWarning').classList.remove('hidden');
+                document.getElementById('localModeWarning').classList.remove('hidden'); 
+                console.log("Running in local/fallback mode. Sync is disabled.");
                 return;
             }
 
+            // ATTEMPT AUTH
             try {
                 if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token.length > 0) {
                     await signInWithCustomToken(auth, window.__initial_auth_token);
@@ -72,28 +83,32 @@
                 }
             } catch (error) {
                 console.error("Firebase Auth failed:", error.code, error.message);
-                // Auth failed (likely due to invalid key from environment). Switch to local mode.
+                
+                // AUTH FAILED: Switch to local mode and inform the user
                 isFirebaseAvailable = false;
                 localPlayerId = crypto.randomUUID(); 
+                document.getElementById('currentUserId').innerText = localPlayerId.substring(0, 8) + '... (Local)';
                 document.getElementById('lobbyScreen').classList.remove('hidden');
                 document.getElementById('loadingAuth').classList.add('hidden');
-                document.getElementById('authFailureWarning').classList.remove('hidden');
+                document.getElementById('localModeWarning').classList.remove('hidden'); 
                 return;
             }
         }
 
-        onAuthStateChanged(auth, (user) => {
-            if (user && isFirebaseAvailable) {
-                currentUser = user;
-                localPlayerId = user.uid; // Use UID as the unique player ID
-                document.getElementById('lobbyScreen').classList.remove('hidden');
-                document.getElementById('loadingAuth').classList.add('hidden');
-            } else if (!isFirebaseAvailable) {
-                 // Already handled by initAuth failure, but ensures the lobby shows
-                 document.getElementById('lobbyScreen').classList.remove('hidden');
-                 document.getElementById('loadingAuth').classList.add('hidden');
-            }
-        });
+        // Auth State Listener runs after successful sign-in or session loading
+        if (isFirebaseAvailable) {
+            onAuthStateChanged(auth, (user) => {
+                if (user && isFirebaseAvailable) {
+                    currentUser = user;
+                    localPlayerId = user.uid; // Use UID as the unique player ID
+                    document.getElementById('currentUserId').innerText = localPlayerId;
+                    document.getElementById('lobbyScreen').classList.remove('hidden');
+                    document.getElementById('loadingAuth').classList.add('hidden');
+                }
+                // Note: If user is null, the screen stays in 'loadingAuth' until initAuth finishes/falls back.
+            });
+        }
+
 
         window.joinRealm = async () => {
             const code = document.getElementById('realmCodeInput').value.trim().toUpperCase();
@@ -108,21 +123,33 @@
             document.getElementById('lobbyScreen').classList.add('hidden');
             document.getElementById('appScreen').classList.remove('hidden');
             document.getElementById('realmDisplay').innerText = `Realm: ${code} | Player: ${localPlayerName}`;
-            document.getElementById('currentArchitectName').innerText = localPlayerName; // Set the name immediately
+            document.getElementById('currentArchitectName').innerText = localPlayerName; 
             
-            if (localPlayerId) {
-                setupRealtimeListener();
-            } else {
-                showNotification("Cannot connect. Authentication is not ready.", 'bg-red-800');
-            }
+            // In local mode, localPlayerId is ready immediately. In Firebase mode, it's ready via onAuthStateChanged.
+            // We can now safely call the listener setup.
+            setupRealtimeListener();
         };
 
         // --- REALTIME DATABASE LISTENER ---
         function setupRealtimeListener() {
+            // Player initialization for local mode must happen here if no sync is available
             if (!isFirebaseAvailable) {
-                 console.log("Local mode active. Skipping Firestore subscription.");
                  document.getElementById('realmDisplay').innerText = `Realm: ${currentRealmId} (Local Only)`;
-                 document.getElementById('currentUserId').innerText = localPlayerId.substring(0, 8) + '... (Local)';
+                 
+                 // Initialize players list if empty (only for the first time in local mode)
+                 if (window.players.length === 0) {
+                     window.players.push({
+                        id: localPlayerId,
+                        name: localPlayerName,
+                        energy: 10,
+                        techLevel: 0,
+                        inventory: [],
+                        lastUpdate: Date.now(),
+                        worldData: null
+                    });
+                 }
+                 window.renderPlayers();
+                 window.updateSelects();
                  return;
             }
 
@@ -131,18 +158,17 @@
                  return;
             }
 
-            // Update user ID display for authenticated users
-            document.getElementById('currentUserId').innerText = localPlayerId;
-
-
+            // Sync Path: artifacts/{appId}/public/data/realm_{realmId}
             const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
 
             unsubscribe = onSnapshot(realmRef, (docSnap) => {
                 let data = docSnap.exists() ? docSnap.data() : {};
                 let localPlayers = data.players || [];
                 
-                // 1. Ensure the current player exists in the realm list
+                // 1. Ensure the current player exists in the realm list (Self-Registration)
                 let currentPlayer = localPlayers.find(p => p.id === localPlayerId);
+                let needsUpdate = false;
+                
                 if (!currentPlayer) {
                     currentPlayer = {
                         id: localPlayerId,
@@ -154,10 +180,18 @@
                         worldData: null
                     };
                     localPlayers.push(currentPlayer);
-                    
-                    // Save the updated list back immediately to create the entry
+                    needsUpdate = true;
+                } else if (currentPlayer.name !== localPlayerName) {
+                    // Update name if the local name has changed (e.g., first entry)
+                    currentPlayer.name = localPlayerName;
+                    needsUpdate = true;
+                }
+
+                if (needsUpdate) {
+                    // Save the updated list back immediately to create the entry or update the name
+                    // Pass current battle states to ensure they aren't overwritten on creation
                     window.saveToDb(localPlayers, data.battleState, data.duoBattleState, true);
-                    return; // Wait for the new snapshot with the new player
+                    return; // Wait for the new snapshot with the updated player list
                 }
                 
                 // 2. Sync Global State
@@ -207,7 +241,8 @@
         }
 
         // --- SYNC ACTIONS ---
-        window.saveToDb = async (newPlayers, newBattleState = null, newDuoBattleState = null, initialCreate = false) => {
+        // Added exponential backoff retry logic to the save function for robustness
+        window.saveToDb = async (newPlayers, newBattleState = null, newDuoBattleState = null, initialCreate = false, attempt = 0) => {
             if (!isFirebaseAvailable) {
                 // Local Mode Save (simulated)
                 window.players = newPlayers;
@@ -215,11 +250,12 @@
                 if (newDuoBattleState) duoBattleState = newDuoBattleState;
                 window.renderPlayers();
                 window.updateSelects();
+                showNotification("Local save successful.", 'bg-blue-600');
                 return;
             }
 
             if (!currentRealmId || !db || !appId) return;
-
+            const MAX_RETRIES = 3;
             const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
             
             const updateData = { players: newPlayers };
@@ -233,7 +269,12 @@
                      await updateDoc(realmRef, updateData);
                 }
             } catch (e) {
-                console.error("Save failed:", e);
+                if (attempt < MAX_RETRIES) {
+                    const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return window.saveToDb(newPlayers, newBattleState, newDuoBattleState, initialCreate, attempt + 1);
+                }
+                console.error("Save failed after multiple retries:", e);
                 showNotification("Save failed. Check console for error.", 'bg-red-800');
             }
         };
@@ -262,10 +303,7 @@
             
             <!-- WARNING MESSAGE FOR LOCAL MODE / AUTH FAILURE -->
             <div id="localModeWarning" class="hidden bg-red-900/50 text-red-300 p-3 rounded-lg mb-4 border border-red-700">
-                <i class="fa-solid fa-cloud-exclamation mr-2"></i> Sync Disabled (Running with Fallback Config)
-            </div>
-            <div id="authFailureWarning" class="hidden bg-red-900/50 text-red-300 p-3 rounded-lg mb-4 border border-red-700">
-                <i class="fa-solid fa-ban mr-2"></i> Authentication Failed. Multiplayer Sync is Disabled.
+                <i class="fa-solid fa-cloud-exclamation mr-2"></i> Sync Disabled (Running in Local Mode)
             </div>
             <!-- END WARNING -->
 
@@ -506,7 +544,7 @@
         let currentRotation = 0;
         let currentDuoRotation = 0;
 
-        // Display current user ID in the footer (will be updated by setupRealtimeListener)
+        // Display initial ID placeholder (will be overwritten by initAuth)
         if (window.localPlayerId) {
             document.getElementById('currentUserId').innerText = window.localPlayerId.substring(0, 8) + '... (Local)';
         }
@@ -523,7 +561,7 @@
             let localPlayers = [...window.players]; 
             let pIndex = localPlayers.findIndex(p => p.id === localPlayerId);
             
-            // If running in local mode and player wasn't added yet (shouldn't happen, but safety check)
+            // If running in local mode and player wasn't added yet (safety check)
             if (pIndex === -1) {
                 const newPlayer = {
                     id: localPlayerId,
@@ -546,7 +584,7 @@
             p.worldData = data;
             
             window.saveToDb(localPlayers);
-            showNotification(`World saved to ${localPlayerName}! Syncing...`, 'bg-indigo-600');
+            showNotification(`World saved to ${localPlayerName}! ${isFirebaseAvailable ? 'Syncing...' : '(Local Save)'}`, 'bg-indigo-600');
         };
 
         window.loadPlayerWorldData = (id) => {
