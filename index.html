@@ -11,7 +11,7 @@
     
     <!-- ⚠️ YOUR FIREBASE CONFIGURATION ⚠️ -->
     <script>
-        // I have inserted your specific configuration here
+        // CONFIGURATION
         window.__firebase_config = JSON.stringify({
             apiKey: "AIzaSyCoRExE1mKJqKb6b5Kv1Suxun4DuMkMnG0",
             authDomain: "real-96b07.firebaseapp.com",
@@ -21,14 +21,15 @@
             appId: "1:699368878306:web:936026a24ec82a0d59eebb",
             measurementId: "G-H86F01XPM3"
         });
-        
-        // This ID is used to store your game data in the database
         window.__app_id = "real-96b07"; 
+        
+        // FLAG TO TRACK SUCCESS
+        window.firebaseInitSuccess = false;
     </script>
     
     <!-- Firebase Imports and Main Application Logic -->
     <script type="module">
-        // 1. Static Imports: We use these URLs instead of 'firebase/app' so it works in the browser
+        // 1. Static Imports: Using CDN links for browser compatibility
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, updateDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
@@ -50,7 +51,6 @@
 
         window.renderPlayers = () => {
             const list = document.getElementById('playerList');
-            // Safely handle empty players array
             const currentPlayers = window.players || [];
             
             if (currentPlayers.length === 0) {
@@ -99,7 +99,6 @@
             const currentPlayers = window.players || [];
             const playerOptions = currentPlayers.map(p => `<option value="${p.id}">${p.name} (T${p.techLevel})</option>`).join('');
             
-            // Helper to preserve selection if possible
             const updateSelect = (id, defaultText) => {
                 const el = document.getElementById(id);
                 const currentVal = el.value;
@@ -109,15 +108,10 @@
                 }
             };
 
-            // 1v1 Battle Selects
             updateSelect('p1Select', 'P1 - Select Player');
             updateSelect('p2Select', 'P2 - Select Player');
-
-            // Research/Crafting Selects
             updateSelect('researcherSelect', 'Select Researcher');
             updateSelect('crafterSelect', 'Select Crafter');
-
-            // 2v2 Battle Selects
             updateSelect('t1p1Select', 'Team 1 (P1)');
             updateSelect('t1p2Select', 'Team 1 (P2)');
             updateSelect('t2p1Select', 'Team 2 (P1)');
@@ -163,23 +157,16 @@
             showNotification("World Data Saved Successfully!", 'bg-green-600');
         };
 
-        // Logic for Research
         window.conductResearch = async () => {
             const playerId = document.getElementById('researcherSelect').value;
             if (!playerId) return showNotification("Select a researcher!", 'bg-red-600');
-            
             const player = window.findPlayerById(playerId);
             if (!player) return showNotification("Player not found!", 'bg-red-600');
-            
-            // Only allow researching for yourself unless in a debug mode
             if (player.id !== localPlayerId) return showNotification("You can only research for yourself!", 'bg-red-600');
-            
             if (player.energy < 2) return showNotification(`${player.name} needs 2 Energy to research!`, 'bg-red-600');
 
-            // Find index and update player state
             const index = window.players.findIndex(p => p.id === playerId);
             const updatedPlayers = [...window.players];
-            
             updatedPlayers[index].energy -= 2;
             updatedPlayers[index].techLevel += 1;
             updatedPlayers[index].lastUpdate = Date.now();
@@ -188,29 +175,21 @@
             showNotification(`${player.name} researched new tech! Tech Level is now ${updatedPlayers[index].techLevel}.`, 'bg-indigo-600');
         };
 
-        // Logic for Crafting
         window.craftItem = async () => {
             const playerId = document.getElementById('crafterSelect').value;
             const schematic = document.getElementById('schematicInput').value.trim();
             const requiredResource = document.getElementById('resources').value;
-            
             if (!playerId) return showNotification("Select a crafter!", 'bg-red-600');
             if (!schematic) return showNotification("Enter a schematic name!", 'bg-red-600');
             if (requiredResource === 'None') return showNotification("Set a primary world resource first!", 'bg-red-600');
-
             const player = window.findPlayerById(playerId);
             if (!player) return showNotification("Player not found!", 'bg-red-600');
-            
             if (player.id !== localPlayerId) return showNotification("You can only craft for yourself!", 'bg-red-600');
-
             if (player.energy < 5) return showNotification(`${player.name} needs 5 Energy to craft!`, 'bg-red-600');
             if (player.techLevel < 3) return showNotification(`${player.name} needs Tech Level 3 to craft complex items!`, 'bg-red-600');
 
-
-            // Find index and update player state
             const index = window.players.findIndex(p => p.id === playerId);
             const updatedPlayers = [...window.players];
-            
             updatedPlayers[index].energy -= 5;
             updatedPlayers[index].inventory.push(`${schematic} (${requiredResource})`);
             updatedPlayers[index].lastUpdate = Date.now();
@@ -224,7 +203,6 @@
             document.getElementById('craftingStatus').innerText = `Resource: ${resource}`;
         };
 
-        // Logic for 1v1 Battle
         window.updateBattleOdds = () => {
             const p1Id = document.getElementById('p1Select').value;
             const p2Id = document.getElementById('p2Select').value;
@@ -239,14 +217,11 @@
                 return;
             }
 
-            // Calculate odds based on tech level difference (simplified, max 80%)
             let diff = p1Level - p2Level;
             let baseOdd = 50;
-            let adjustment = Math.min(30, Math.abs(diff) * 5); // 5% per level, max 30%
-            
+            let adjustment = Math.min(30, Math.abs(diff) * 5);
             let p1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
             let p2Odd = 100 - p1Odd;
-
             document.getElementById('oddsDisplay').innerText = `Odds: P1 (${p1Odd}%) vs P2 (${p2Odd}%)`;
         };
 
@@ -255,12 +230,10 @@
             const p2Id = document.getElementById('p2Select').value;
             const p1 = window.findPlayerById(p1Id);
             const p2 = window.findPlayerById(p2Id);
-            
             if (!p1 || !p2 || p1Id === p2Id) {
                 return showNotification("Select two unique players for the battle!", 'bg-red-600');
             }
 
-            // Recalculate odds to use for the flip
             let diff = p1.techLevel - p2.techLevel;
             let baseOdd = 50;
             let adjustment = Math.min(30, Math.abs(diff) * 5);
@@ -269,17 +242,12 @@
             const coin = document.getElementById('coin');
             coin.style.transition = 'none';
             coin.style.transform = 'rotateY(0deg)';
-            
-            // Wait for render
             await new Promise(resolve => setTimeout(resolve, 50));
 
-            // Determine winner based on odds
             const random = Math.random() * 100;
             const winnerId = (random < p1Odd) ? p1Id : p2Id;
-            const winnerName = (winnerId === p1Id) ? p1.name : p2.name;
             const flipResult = (winnerId === p1Id) ? 'heads' : 'tails';
 
-            // Update local state
             const newBattleState = {
                 ...battleState,
                 lastBattleId: battleState.lastBattleId + 1,
@@ -291,36 +259,27 @@
             } else {
                 newBattleState.p2 += 1;
             }
-
-            // Save to DB (this also triggers the animation for all synced users)
             await window.saveToDb(window.players, newBattleState);
         };
 
-        // Logic for 2v2 Battle
         window.updateDuoBattleOdds = () => {
             const t1p1 = window.findPlayerById(document.getElementById('t1p1Select').value);
             const t1p2 = window.findPlayerById(document.getElementById('t1p2Select').value);
             const t2p1 = window.findPlayerById(document.getElementById('t2p1Select').value);
             const t2p2 = window.findPlayerById(document.getElementById('t2p2Select').value);
-
             let t1Level = (t1p1 ? t1p1.techLevel : 0) + (t1p2 ? t1p2.techLevel : 0);
             let t2Level = (t2p1 ? t2p1.techLevel : 0) + (t2p2 ? t2p2.techLevel : 0);
-            
-            // Check for duplicate players across teams
             const allPlayers = [t1p1, t1p2, t2p1, t2p2].filter(p => p);
             const playerIds = allPlayers.map(p => p.id);
             if (new Set(playerIds).size !== playerIds.length) {
                 document.getElementById('duoOddsDisplay').innerText = "ERROR: Duplicate players detected!";
                 return;
             }
-
             let diff = t1Level - t2Level;
             let baseOdd = 50;
-            let adjustment = Math.min(30, Math.abs(diff) * 3); // Slightly less weight for team battles
-            
+            let adjustment = Math.min(30, Math.abs(diff) * 3);
             let t1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
             let t2Odd = 100 - t1Odd;
-
             document.getElementById('duoOddsDisplay').innerText = `Odds: Team 1 (${t1Odd}%) vs Team 2 (${t2Odd}%)`;
         };
 
@@ -330,27 +289,22 @@
             const t2p1 = window.findPlayerById(document.getElementById('t2p1Select').value);
             const t2p2 = window.findPlayerById(document.getElementById('t2p1Select').value);
 
-            if (!t1p1 || !t2p1) { // At least one player per team
+            if (!t1p1 || !t2p1) { 
                 return showNotification("Select at least P1 for Team 1 and P3 for Team 2!", 'bg-red-600');
             }
-
             let t1Level = (t1p1 ? t1p1.techLevel : 0) + (t1p2 ? t1p2.techLevel : 0);
             let t2Level = (t2p1 ? t2p1.techLevel : 0) + (t2p2 ? t2p2.techLevel : 0);
-            
             let diff = t1Level - t2Level;
             let baseOdd = 50;
             let adjustment = Math.min(30, Math.abs(diff) * 3);
             let t1Odd = baseOdd + (diff > 0 ? adjustment : -adjustment);
-
             const coin = document.getElementById('duoCoin');
             coin.style.transition = 'none';
             coin.style.transform = 'rotateY(0deg)';
             await new Promise(resolve => setTimeout(resolve, 50));
-
             const random = Math.random() * 100;
             const winnerTeam = (random < t1Odd) ? 't1' : 't2';
             const flipResult = (winnerTeam === 't1') ? 'heads' : 'tails';
-
             const newDuoBattleState = {
                 ...duoBattleState,
                 lastBattleId: duoBattleState.lastBattleId + 1,
@@ -362,7 +316,6 @@
             } else {
                 newDuoBattleState.t2 += 1;
             }
-
             await window.saveToDb(window.players, battleState, newDuoBattleState);
         };
 
@@ -383,30 +336,20 @@
             const resultDisplay = document.getElementById(resultDisplayId);
             const team1Name = isDuo ? 'Team 1 (Blue)' : 'P1';
             const team2Name = isDuo ? 'Team 2 (Red)' : 'P2';
-
             coin.style.transition = 'none';
             coin.style.transform = 'rotateY(0deg)';
-
-            // Force a reflow
             void coin.offsetWidth; 
-
             coin.style.transition = 'transform 1.5s cubic-bezier(0.4, 2.5, 0.55, 0.5)';
-            
-            // Rotate the coin to show the result (Heads/P1 = 0deg, Tails/P2 = 180deg)
             if (newState.result === 'heads') {
                 coin.style.transform = 'rotateY(3600deg)';
             } else {
                 coin.style.transform = 'rotateY(3780deg)'; // 3600 + 180
             }
-
             resultDisplay.innerText = '';
-            
             setTimeout(() => {
                 let winnerText = isDuo 
                     ? (newState.winner === 't1' ? team1Name : team2Name)
                     : (newState.winner === document.getElementById('p1Select').value ? team1Name : team2Name);
-                
-                // Fallback for 1v1 if player names are not available yet (e.g. fresh start)
                 if (!isDuo && !winnerText) {
                     const p1 = window.findPlayerById(document.getElementById('p1Select').value);
                     const p2 = window.findPlayerById(document.getElementById('p2Select').value);
@@ -414,36 +357,28 @@
                         winnerText = (newState.winner === p1.id) ? p1.name : p2.name;
                     }
                 }
-                
                 resultDisplay.innerText = `${winnerText} WINS!`;
-                
-                // Clear the result after a few seconds
                 setTimeout(() => {
                     resultDisplay.innerText = '';
                 }, 4000);
-
-            }, 1800); // After animation completes
+            }, 1800);
         };
 
         window.switchBattleMode = (mode) => {
             document.getElementById('battleGUI_1v1').classList.toggle('hidden', mode !== '1v1');
             document.getElementById('battleGUI_2v2').classList.toggle('hidden', mode !== '2v2');
-            
             document.getElementById('btn1v1').classList.toggle('bg-yellow-600', mode === '1v1');
             document.getElementById('btn1v1').classList.toggle('bg-slate-700', mode !== '1v1');
             document.getElementById('btn1v1').classList.toggle('text-white', mode === '1v1');
             document.getElementById('btn1v1').classList.toggle('text-slate-300', mode !== '1v1');
-
             document.getElementById('btn2v2').classList.toggle('bg-yellow-600', mode === '2v2');
             document.getElementById('btn2v2').classList.toggle('bg-slate-700', mode !== '2v2');
             document.getElementById('btn2v2').classList.toggle('text-white', mode === '2v2');
             document.getElementById('btn2v2').classList.toggle('text-slate-300', mode !== '2v2');
         }
 
-
-        // --- FIREBASE CONFIG CHECK & INITIALIZATION ---
+        // --- FIREBASE INITIALIZATION & AUTH ---
         const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
-        
         let app, auth, db, appId;
         let currentUser = null;
         let localPlayerId = null; 
@@ -451,13 +386,37 @@
         let currentRealmId = null;
         let unsubscribe = null;
         let analytics = null;
+        let isFirebaseAvailable = true;
 
-        // Global State (Synced)
         window.players = [];
         let battleState = { p1: 0, p2: 0, lastBattleId: 0, result: null, winner: null };
         let duoBattleState = { t1: 0, t2: 0, lastBattleId: 0, result: null, winner: null };
         
-        // --- AUTH & LOBBY ---
+        // FUNCTION TO FORCE LOCAL MODE IF AUTH FAILS
+        window.forceLocalMode = (reason) => {
+            if (window.firebaseInitSuccess) return; // Already succeeded
+            
+            console.warn("Forcing Local Mode:", reason);
+            isFirebaseAvailable = false;
+            localPlayerId = crypto.randomUUID();
+            
+            // UI Updates
+            const loader = document.getElementById('loadingAuth');
+            if(loader) loader.classList.add('hidden');
+            
+            const warningBox = document.getElementById('localModeWarning');
+            if(warningBox) warningBox.classList.remove('hidden');
+            
+            const userIdDisplay = document.getElementById('currentUserId');
+            if(userIdDisplay) userIdDisplay.innerText = localPlayerId.substring(0, 8) + '... (Offline)';
+            
+            const lobby = document.getElementById('lobbyScreen');
+            if(lobby) lobby.classList.remove('hidden');
+            
+            const statusMsg = document.getElementById('loadingStatusMsg');
+            if(statusMsg) statusMsg.innerText = "Connection Failed. Running Offline.";
+        }
+
         async function initAuth() {
             document.getElementById('loadingAuth').classList.remove('hidden');
             
@@ -465,21 +424,21 @@
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
-                analytics = getAnalytics(app); // Initialize analytics
+                analytics = getAnalytics(app);
                 appId = window.__app_id || firebaseConfig.projectId;
-                
                 setLogLevel('error');
-                console.log("Firebase initialized successfully. App ID:", appId);
+                console.log("Firebase App Initialized.");
 
-                // Check for existing token or sign in anonymously
                 if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token.length > 0) {
                     await signInWithCustomToken(auth, window.__initial_auth_token);
                 } else {
+                    // Try anonymous sign in
                     await signInAnonymously(auth);
                 }
 
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
+                        window.firebaseInitSuccess = true; // Flag success
                         currentUser = user;
                         localPlayerId = user.uid;
                         document.getElementById('currentUserId').innerText = localPlayerId;
@@ -489,22 +448,20 @@
                 });
 
             } catch (error) {
-                console.error("Firebase Initialization or Auth Failed:", error);
-                // Fallback to local mode
-                isFirebaseAvailable = false;
-                localPlayerId = crypto.randomUUID();
-                document.getElementById('currentUserId').innerText = localPlayerId.substring(0, 8) + '... (Local)';
-                document.getElementById('lobbyScreen').classList.remove('hidden');
-                document.getElementById('loadingAuth').classList.add('hidden');
-                document.getElementById('localModeWarning').classList.remove('hidden'); 
-                showNotification("Auth Failed. Running Offline.", 'bg-red-800');
+                console.error("Critical Auth Error:", error);
+                
+                // SPECIFIC ERROR MESSAGES FOR USER
+                if (error.code === 'auth/operation-not-allowed' || error.code === 'auth/admin-restricted-operation') {
+                     showNotification("ERROR: Enable 'Anonymous' in Firebase Console -> Auth -> Sign-in method", "bg-red-900 border-2 border-red-500 w-96");
+                }
+                
+                window.forceLocalMode(error.message);
             }
         }
 
         window.joinRealm = async () => {
             const code = document.getElementById('realmCodeInput').value.trim().toUpperCase();
             const name = document.getElementById('playerNameInput').value.trim();
-            
             if (!code) return showNotification("Enter a Realm Code!", 'bg-red-600');
             if (!name) return showNotification("Enter your Player Name!", 'bg-red-600');
             
@@ -519,10 +476,8 @@
             setupRealtimeListener();
         };
 
-        // --- REALTIME DATABASE LISTENER ---
         function setupRealtimeListener() {
-            if (!auth.currentUser) {
-                 // Offline mode handling
+            if (!auth.currentUser || !isFirebaseAvailable) {
                  document.getElementById('realmDisplay').innerText = `Realm: ${currentRealmId} (Local Only)`;
                  if (window.players.length === 0) {
                      window.players.push({
@@ -540,15 +495,11 @@
                  return;
             }
 
-            // Sync Path: artifacts/{appId}/public/data/realm_{realmId}
-            // Note: using 'realm_' + code to avoid collision with other collections
             const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
 
             unsubscribe = onSnapshot(realmRef, (docSnap) => {
                 let data = docSnap.exists() ? docSnap.data() : {};
                 let localPlayers = data.players || [];
-                
-                // 1. Ensure the current player exists in the realm list (Self-Registration)
                 let currentPlayer = localPlayers.find(p => p.id === localPlayerId);
                 let needsUpdate = false;
                 
@@ -565,7 +516,6 @@
                     localPlayers.push(currentPlayer);
                     needsUpdate = true;
                 } else if (currentPlayer.name !== localPlayerName) {
-                    // Update name if the local name has changed
                     localPlayers = localPlayers.map(p => {
                         if (p.id === localPlayerId) {
                              if (p.name !== localPlayerName) {
@@ -578,15 +528,12 @@
                 }
 
                 if (needsUpdate) {
-                    // Save and wait for next snapshot
                     window.saveToDb(localPlayers, data.battleState, data.duoBattleState, true);
                     return; 
                 }
                 
-                // 2. Sync Global State
                 window.players = localPlayers;
                 
-                // Sync 1v1 Battle
                 if (data.battleState) {
                     if (data.battleState.lastBattleId !== battleState.lastBattleId) {
                         triggerBattleAnimation(data.battleState, 'coin', 'battleResult');
@@ -594,11 +541,7 @@
                     battleState = data.battleState;
                     document.getElementById('p1Score').innerText = battleState.p1;
                     document.getElementById('p2Score').innerText = battleState.p2;
-                } else {
-                    battleState = { p1: 0, p2: 0, lastBattleId: 0, result: null, winner: null };
                 }
-
-                // Sync 2v2 Battle
                 if (data.duoBattleState) {
                     if (data.duoBattleState.lastBattleId !== duoBattleState.lastBattleId) {
                         triggerBattleAnimation(data.duoBattleState, 'duoCoin', 'duoBattleResult', true);
@@ -606,16 +549,11 @@
                     duoBattleState = data.duoBattleState;
                     document.getElementById('t1Score').innerText = duoBattleState.t1;
                     document.getElementById('t2Score').innerText = duoBattleState.t2;
-                } else {
-                    duoBattleState = { t1: 0, t2: 0, lastBattleId: 0, result: null, winner: null };
                 }
-
-                // 3. Render UI based on new state
                 window.renderPlayers();
                 window.updateSelects();
 
                 if (!docSnap.exists()) {
-                    // Create new realm if doesn't exist (initial save)
                     setDoc(realmRef, {
                         players: localPlayers,
                         battleState: battleState,
@@ -630,10 +568,8 @@
             });
         }
 
-        // --- SYNC ACTIONS ---
         window.saveToDb = async (newPlayers, newBattleState = null, newDuoBattleState = null, initialCreate = false, attempt = 0) => {
-            if (!auth.currentUser) {
-                // Local Mode
+            if (!auth?.currentUser) {
                 window.players = newPlayers;
                 if (newBattleState) battleState = newBattleState;
                 if (newDuoBattleState) duoBattleState = newDuoBattleState;
@@ -662,13 +598,48 @@
                     await new Promise(resolve => setTimeout(resolve, delay));
                     return window.saveToDb(newPlayers, newBattleState, newDuoBattleState, initialCreate, attempt + 1);
                 }
-                console.error("Save failed after multiple retries:", e);
+                console.error("Save failed:", e);
                 showNotification("Save failed. Check console.", 'bg-red-800');
             }
         };
 
-        // Start Auth Process
+        // Initialize
         initAuth();
+    </script>
+    
+    <!-- 🛑 SAFETY SCRIPT: This runs if the module above fails to load or hangs 🛑 -->
+    <script>
+        setTimeout(() => {
+            const loader = document.getElementById('loadingAuth');
+            // Check if loader is still visible AND we haven't succeeded yet
+            if (loader && !loader.classList.contains('hidden') && !window.firebaseInitSuccess) {
+                console.warn("Safety Timeout: Firebase init took too long. Forcing offline mode.");
+                
+                // Update UI to show error
+                const statusP = document.getElementById('loadingStatusMsg');
+                if (statusP) {
+                    statusP.innerHTML = `
+                        <span class="text-red-400 font-bold block mb-2">Connection Timeout!</span>
+                        <span class="text-xs">1. Check Internet<br>2. Enable "Anonymous Auth" in Firebase Console<br>3. Check Console (F12) for errors</span>
+                    `;
+                    
+                    // Add a button to force offline mode
+                    const forceBtn = document.createElement('button');
+                    forceBtn.innerText = "FORCE OFFLINE MODE";
+                    forceBtn.className = "mt-4 bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded text-xs";
+                    forceBtn.onclick = () => {
+                         if (window.forceLocalMode) window.forceLocalMode("User Forced Offline");
+                         else {
+                            // Manual fallback if forceLocalMode isn't defined (script crashed)
+                            loader.classList.add('hidden');
+                            document.getElementById('lobbyScreen').classList.remove('hidden');
+                            document.getElementById('localModeWarning').classList.remove('hidden');
+                         }
+                    };
+                    statusP.appendChild(forceBtn);
+                }
+            }
+        }, 5000); // 5 Seconds Timeout
     </script>
 
     <style>
@@ -692,7 +663,7 @@
             
             <!-- WARNING MESSAGE FOR LOCAL MODE / AUTH FAILURE -->
             <div id="localModeWarning" class="hidden bg-red-900/50 text-red-300 p-3 rounded-lg mb-4 border border-red-700">
-                <i class="fa-solid fa-cloud-exclamation mr-2"></i> Sync Disabled (Running in Local Mode) - User ID: <span id="currentUserId" class="font-mono text-xs"></span>
+                <i class="fa-solid fa-cloud-exclamation mr-2"></i> Sync Disabled (Running Offline) - User ID: <span id="currentUserId" class="font-mono text-xs"></span>
             </div>
             <!-- END WARNING -->
 
@@ -716,7 +687,7 @@
     <div id="loadingAuth" class="fixed inset-0 z-50 bg-slate-900 flex items-center justify-center">
         <div class="text-center">
             <i class="fa-solid fa-circle-notch fa-spin text-indigo-500 text-4xl mb-4"></i>
-            <p class="text-slate-400">Connecting to the Aether...</p>
+            <p id="loadingStatusMsg" class="text-slate-400">Connecting to the Aether...</p>
         </div>
     </div>
 
