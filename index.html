@@ -7,7 +7,70 @@
     <!-- Tailwind CDN for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght=400;700&family=Inter:wght=300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght=300;400;600&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1f2937; /* Dark Slate Gray */
+            color: #d1d5db; /* Light Gray */
+        }
+        .cinzel {
+            font-family: 'Cinzel', serif;
+        }
+        .card {
+            background-color: #374151; /* Medium Slate Gray */
+            border: 1px solid #4b5563; /* Border */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .btn-primary {
+            background-color: #f59e0b; /* Amber */
+            color: #1f2937;
+            font-weight: bold;
+            transition: all 0.15s;
+        }
+        .btn-primary:hover {
+            background-color: #d97706;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }
+        .coin-face {
+            backface-visibility: hidden;
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            font-weight: bold;
+            color: white;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        #coin, #duoCoin {
+            width: 80px;
+            height: 80px;
+            margin: 20px auto;
+            transform-style: preserve-3d;
+            perspective: 1000px;
+            transition: transform 1.5s cubic-bezier(0.4, 2.5, 0.55, 0.5);
+        }
+        #coin .front { background-color: #10b981; transform: rotateY(0deg); }
+        #coin .back { background-color: #ef4444; transform: rotateY(180deg); }
+        #duoCoin .front { background-color: #3b82f6; transform: rotateY(0deg); } /* Blue */
+        #duoCoin .back { background-color: #ef4444; transform: rotateY(180deg); } /* Red */
+        
+        input[type="text"], select, textarea {
+            background-color: #1f2937;
+            border: 1px solid #4b5563;
+            color: #f3f4f6;
+        }
+        input:focus, select:focus, textarea:focus {
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 1px #f59e0b;
+        }
+    </style>
     
     <!-- ⚠️ YOUR FIREBASE CONFIGURATION ⚠️ -->
     <script>
@@ -38,7 +101,7 @@
         // --- UTILITY FUNCTIONS ---
         function showNotification(message, className) {
             const notification = document.createElement('div');
-            notification.className = `fixed top-4 right-4 z-[99] p-4 rounded-lg shadow-xl text-white font-bold transition-all ${className}`;
+            notification.className = `fixed top-4 right-4 z-[99] p-4 rounded-lg shadow-xl text-white font-bold transition-all duration-300 ${className}`;
             notification.innerHTML = `<i class="fa-solid fa-bell mr-2"></i> ${message}`;
             document.body.appendChild(notification);
             setTimeout(() => {
@@ -46,7 +109,7 @@
                 notification.classList.remove('top-4');
                 notification.classList.add('top-0');
                 setTimeout(() => notification.remove(), 500);
-            }, 8000); // Increased duration for error reading
+            }, 5000); 
         }
 
         window.renderPlayers = () => {
@@ -82,17 +145,52 @@
 
             // Also update the World Data Preview if available
             const worldPreview = document.getElementById('worldDataPreview');
-            if (currentPlayer && currentPlayer.worldData) {
+            if (currentPlayer && currentPlayer.worldData && currentPlayer.worldData.countryName) {
                 const data = currentPlayer.worldData;
                 worldPreview.innerHTML = `
-                    <p class="text-xs text-slate-300">**${data.countryName || 'Untitled Country'}**</p>
-                    <p class="text-xs text-slate-400">Terrain: ${data.terrain}, Climate: ${data.climate}</p>
-                    <p class="text-xs text-slate-400">Resources: ${data.resources}, Export: ${data.export}</p>
+                    <p class="text-sm font-bold text-slate-100 mb-1">${data.countryName || 'Untitled Country'}</p>
+                    <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <p class="text-slate-400"><i class="fa-solid fa-mountain-sun mr-1"></i> Terrain: ${data.terrain}</p>
+                        <p class="text-slate-400"><i class="fa-solid fa-cloud-sun-rain mr-1"></i> Climate: ${data.climate}</p>
+                        <p class="text-slate-400"><i class="fa-solid fa-gem mr-1"></i> Resources: ${data.resources}</p>
+                        <p class="text-slate-400"><i class="fa-solid fa-arrow-right-arrow-left mr-1"></i> Export: ${data.export}</p>
+                    </div>
                     <p class="text-xs text-slate-500 italic mt-2">${data.unique ? data.unique.substring(0, 50) + '...' : 'No unique trait defined.'}</p>
                 `;
             } else {
-                 worldPreview.innerHTML = '<p class="text-xs text-slate-500 italic">No world data saved yet.</p>';
+                worldPreview.innerHTML = '<p class="text-xs text-slate-500 italic">No world data saved yet. Fill out the form below to create your country!</p>';
             }
+        };
+        
+        // --- NEW FUNCTION TO LOAD LIVE DATA INTO THE FORM ---
+        window.loadWorldData = () => {
+            const currentPlayer = window.players.find(p => p.id === localPlayerId);
+            const formElements = document.getElementById('worldForm').elements;
+            
+            if (!currentPlayer || !currentPlayer.worldData) {
+                // Clear or initialize form if no data exists (implicitly creates a "new" country)
+                document.getElementById('worldForm').reset();
+                formElements.resources.value = 'None'; 
+                // Set initial values if you want defaults instead of empty
+            } else {
+                const data = currentPlayer.worldData;
+                
+                // Populate form fields from the current player's worldData
+                // This connects the form to the "live stats" (the player object in the array)
+                formElements.terrain.value = data.terrain || 'Plains';
+                formElements.resources.value = data.resources || 'None';
+                formElements.climate.value = data.climate || 'Temperate';
+                formElements.countryName.value = data.countryName || '';
+                formElements.capitalCity.value = data.capitalCity || '';
+                formElements.language.value = data.language || '';
+                formElements.export.value = data.export || '';
+                formElements.culture.value = data.culture || '';
+                formElements.history.value = data.history || '';
+                formElements.unique.value = data.unique || '';
+            }
+
+            // Ensure the crafting resource dropdown reflects the player's resource choice
+            window.checkCraftingOptions();
         };
 
         window.updateSelects = () => {
@@ -124,10 +222,13 @@
 
         window.findPlayerById = (id) => (window.players || []).find(p => p.id === id);
 
-        // Logic for World Data Save
+        // Logic for World Data Save (Realm Save Data button fix)
         window.saveWorldToPlayer = async () => {
             if (!localPlayerId) return showNotification("You are not logged in!", 'bg-red-600');
             
+            const currentPlayer = window.players.find(p => p.id === localPlayerId);
+            if (!currentPlayer) return showNotification("Player object not found in realm data!", 'bg-red-600');
+
             const formElements = document.getElementById('worldForm').elements;
             const worldData = {
                 terrain: formElements.terrain.value,
@@ -142,18 +243,21 @@
                 unique: formElements.unique.value,
             };
 
+            // 1. Update ONLY the current player's entry in the global array
             const updatedPlayers = window.players.map(p => {
                 if (p.id === localPlayerId) {
+                    // This is the core logic that prevents changing other players' data
                     return { 
                         ...p, 
-                        worldData: worldData,
+                        worldData: worldData, // Saved from the form
                         lastUpdate: Date.now()
                     };
                 }
+                // Return all other players' data unchanged
                 return p;
             });
 
-            // Use the success status returned by saveToDb to show notification
+            // 2. Save the whole updated array back to Firestore
             const success = await window.saveToDb(updatedPlayers);
             if (success) {
                 showNotification("World Data Saved Successfully!", 'bg-green-600');
@@ -165,6 +269,7 @@
             if (!playerId) return showNotification("Select a researcher!", 'bg-red-600');
             const player = window.findPlayerById(playerId);
             if (!player) return showNotification("Player not found!", 'bg-red-600');
+            // Client-side security check: only the local player can initiate this action for themselves
             if (player.id !== localPlayerId) return showNotification("You can only research for yourself!", 'bg-red-600');
             if (player.energy < 2) return showNotification(`${player.name} needs 2 Energy to research!`, 'bg-red-600');
 
@@ -189,6 +294,7 @@
             if (requiredResource === 'None') return showNotification("Set a primary world resource first!", 'bg-red-600');
             const player = window.findPlayerById(playerId);
             if (!player) return showNotification("Player not found!", 'bg-red-600');
+            // Client-side security check: only the local player can initiate this action for themselves
             if (player.id !== localPlayerId) return showNotification("You can only craft for yourself!", 'bg-red-600');
             if (player.energy < 5) return showNotification(`${player.name} needs 5 Energy to craft!`, 'bg-red-600');
             if (player.techLevel < 3) return showNotification(`${player.name} needs Tech Level 3 to craft complex items!`, 'bg-red-600');
@@ -206,7 +312,7 @@
         };
 
         window.checkCraftingOptions = () => {
-            const resource = document.getElementById('resources').value;
+            const resource = document.getElementById('worldForm')?.elements?.resources?.value || 'None';
             document.getElementById('craftingStatus').innerText = `Resource: ${resource}`;
         };
 
@@ -240,6 +346,11 @@
             if (!p1 || !p2 || p1Id === p2Id) {
                 return showNotification("Select two unique players for the battle!", 'bg-red-600');
             }
+            // Add a check to ensure one of the players is the local player to prevent unauthorized action
+            if (p1Id !== localPlayerId && p2Id !== localPlayerId) {
+                return showNotification("You must be one of the combatants to initiate a battle!", 'bg-red-600');
+            }
+
 
             let diff = p1.techLevel - p2.techLevel;
             let baseOdd = 50;
@@ -299,9 +410,18 @@
             const t2p1 = window.findPlayerById(document.getElementById('t2p1Select').value);
             const t2p2 = window.findPlayerById(document.getElementById('t2p2Select').value);
 
+            const t1Ids = [t1p1?.id, t1p2?.id].filter(Boolean);
+            const t2Ids = [t2p1?.id, t2p2?.id].filter(Boolean);
+            const allIds = [...t1Ids, ...t2Ids];
+            const localPlayerInvolved = allIds.includes(localPlayerId);
+
             if (!t1p1 || !t2p1) { 
-                return showNotification("Select at least P1 for Team 1 and P3 for Team 2!", 'bg-red-600');
+                return showNotification("Select at least P1 for Team 1 and P1 for Team 2!", 'bg-red-600');
             }
+            if (!localPlayerInvolved) {
+                return showNotification("You must be part of one of the teams to initiate a battle!", 'bg-red-600');
+            }
+
             let t1Level = (t1p1 ? t1p1.techLevel : 0) + (t1p2 ? t1p2.techLevel : 0);
             let t2Level = (t2p1 ? t2p1.techLevel : 0) + (t2p2 ? t2p2.techLevel : 0);
             let diff = t1Level - t2Level;
@@ -328,7 +448,7 @@
             }
             const success = await window.saveToDb(window.players, battleState, newDuoBattleState);
             if (success) {
-                 // Animation will be triggered by onSnapshot
+                // Animation will be triggered by onSnapshot
             }
         };
 
@@ -343,7 +463,7 @@
         window.resetDuoBattle = async () => {
             const newDuoBattleState = { t1: 0, t2: 0, lastBattleId: duoBattleState.lastBattleId, result: null, winner: null };
             const success = await window.saveToDb(window.players, battleState, newDuoBattleState);
-             if (success) {
+              if (success) {
                 showNotification("2v2 Score Reset!", 'bg-slate-600');
             }
         };
@@ -351,8 +471,17 @@
         window.triggerBattleAnimation = (newState, coinId, resultDisplayId, isDuo = false) => {
             const coin = document.getElementById(coinId);
             const resultDisplay = document.getElementById(resultDisplayId);
-            const team1Name = isDuo ? 'Team 1 (Blue)' : 'P1';
-            const team2Name = isDuo ? 'Team 2 (Red)' : 'P2';
+            
+            // Determine names for display
+            let team1Name = isDuo ? 'Team 1 (Blue)' : 'P1';
+            let team2Name = isDuo ? 'Team 2 (Red)' : 'P2';
+            if (!isDuo) {
+                 const p1 = window.findPlayerById(document.getElementById('p1Select').value);
+                 const p2 = window.findPlayerById(document.getElementById('p2Select').value);
+                 if (p1) team1Name = p1.name;
+                 if (p2) team2Name = p2.name;
+            }
+            
             coin.style.transition = 'none';
             coin.style.transform = 'rotateY(0deg)';
             void coin.offsetWidth; 
@@ -362,19 +491,19 @@
             } else {
                 coin.style.transform = 'rotateY(3780deg)'; // 3600 + 180
             }
-            resultDisplay.innerText = '';
+            resultDisplay.innerText = 'Flipping...';
+
             setTimeout(() => {
                 let winnerText = isDuo 
                     ? (newState.winner === 't1' ? team1Name : team2Name)
                     : (newState.winner === document.getElementById('p1Select').value ? team1Name : team2Name);
-                if (!isDuo && !winnerText) {
-                    const p1 = window.findPlayerById(document.getElementById('p1Select').value);
-                    const p2 = window.findPlayerById(document.getElementById('p2Select').value);
-                    if (p1 && p2) {
-                        winnerText = (newState.winner === p1.id) ? p1.name : p2.name;
-                    }
+                
+                // If the player selects change after the flip, this fallback ensures a name is shown.
+                if (!winnerText || winnerText === 'P1' || winnerText === 'P2' || winnerText === 'Team 1 (Blue)' || winnerText === 'Team 2 (Red)') {
+                     winnerText = (newState.winner === document.getElementById('p1Select').value) ? team1Name : team2Name;
                 }
-                resultDisplay.innerText = `${winnerText} WINS!`;
+                
+                resultDisplay.innerHTML = `<span class="text-xl font-extrabold">${winnerText} WINS!</span>`;
                 setTimeout(() => {
                     resultDisplay.innerText = '';
                 }, 4000);
@@ -526,6 +655,7 @@
                  }
                  window.renderPlayers();
                  window.updateSelects();
+                 window.loadWorldData(); // <-- Load data even in local mode
                  return;
             }
 
@@ -550,11 +680,12 @@
                     localPlayers.push(currentPlayer);
                     needsUpdate = true;
                 } else if (currentPlayer.name !== localPlayerName) {
+                    // Update name in Firestore if it changed locally
                     localPlayers = localPlayers.map(p => {
                         if (p.id === localPlayerId) {
                              if (p.name !== localPlayerName) {
-                                needsUpdate = true;
-                                return { ...p, name: localPlayerName };
+                                 needsUpdate = true;
+                                 return { ...p, name: localPlayerName };
                              }
                         }
                         return p;
@@ -562,7 +693,7 @@
                 }
 
                 if (needsUpdate) {
-                    // Only use initialCreate=true when adding a player to avoid race conditions
+                    // Only use initialCreate=true when adding a player or updating name to avoid race conditions
                     window.saveToDb(localPlayers, data.battleState, data.duoBattleState, true);
                     return; 
                 }
@@ -585,8 +716,12 @@
                     document.getElementById('t1Score').innerText = duoBattleState.t1;
                     document.getElementById('t2Score').innerText = duoBattleState.t2;
                 }
+                
+                // --- NEW: Run the data render/load sequence ---
                 window.renderPlayers();
                 window.updateSelects();
+                window.loadWorldData(); // <-- Load the local player's world data into the form
+                // ---------------------------------------------
 
                 if (!docSnap.exists()) {
                     setDoc(realmRef, {
@@ -612,329 +747,282 @@
                 if (newDuoBattleState) duoBattleState = newDuoBattleState;
                 window.renderPlayers();
                 window.updateSelects();
+                window.loadWorldData(); // Ensure the form updates even offline
                 
                 if (!isFirebaseAvailable) {
-                    // Only show this notification if a state changing action (like saving) was explicitly requested
                     if (!initialCreate && (newPlayers || newBattleState || newDuoBattleState)) {
                        showNotification("Data updated locally (Offline Mode). Data will not sync.", 'bg-orange-600');
                     }
                 }
-                return true; 
+                return true;
             }
-
-            if (!currentRealmId || !db || !appId) {
-                showNotification("System Error: Realm not joined or DB not initialized.", 'bg-red-800');
-                return false;
-            }
-
-            const MAX_RETRIES = 3;
-            const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
             
-            const updateData = { players: newPlayers };
-            if (newBattleState) updateData.battleState = newBattleState;
-            if (newDuoBattleState) updateData.duoBattleState = newDuoBattleState;
-
+            const MAX_RETRIES = 3;
+            const delay = 1000 * Math.pow(2, attempt);
+            
             try {
-                if (initialCreate) {
-                     await setDoc(realmRef, updateData, { merge: true });
-                } else {
-                     await updateDoc(realmRef, updateData);
-                }
-                return true; // Success
-            } catch (e) {
-                if (attempt < MAX_RETRIES) {
-                    const delay = Math.pow(2, attempt) * 1000;
+                const realmRef = doc(db, 'artifacts', appId, 'public', 'data', `realm_${currentRealmId}`);
+                
+                // Prepare update object, merging existing state that wasn't explicitly passed
+                const updateObject = { 
+                    players: newPlayers,
+                    battleState: newBattleState !== null ? newBattleState : battleState,
+                    duoBattleState: newDuoBattleState !== null ? newDuoBattleState : duoBattleState,
+                    lastModified: Date.now()
+                };
+
+                await setDoc(realmRef, updateObject, { merge: true });
+                return true;
+
+            } catch (error) {
+                console.error(`Save attempt ${attempt + 1} failed for realm_${currentRealmId}:`, error);
+                if (attempt < MAX_RETRIES - 1) {
                     await new Promise(resolve => setTimeout(resolve, delay));
                     return window.saveToDb(newPlayers, newBattleState, newDuoBattleState, initialCreate, attempt + 1);
+                } else {
+                    showNotification(`Failed to save data after ${MAX_RETRIES} attempts. Check permissions!`, 'bg-red-800 border-2 border-red-400');
+                    return false;
                 }
-                console.error("Save failed:", e);
-                showNotification("Save failed. Check console for Firebase/Firestore errors.", 'bg-red-800');
-                return false; // Final Failure
             }
         };
 
-        // Initialize
-        initAuth();
-    </script>
-    
-    <!-- 🛑 SAFETY SCRIPT: This runs if the module above fails to load or hangs 🛑 -->
-    <script>
-        setTimeout(() => {
-            const loader = document.getElementById('loadingAuth');
-            // Check if loader is still visible AND we haven't succeeded yet
-            if (loader && !loader.classList.contains('hidden') && !window.firebaseInitSuccess) {
-                console.warn("Safety Timeout: Firebase init took too long. Forcing offline mode.");
-                
-                // Update UI to show error
-                const statusP = document.getElementById('loadingStatusMsg');
-                if (statusP) {
-                    statusP.innerHTML = `
-                        <span class="text-red-400 font-bold block mb-2">Connection Timeout!</span>
-                        <span class="text-xs">1. Check Internet<br>2. Enable "Anonymous Auth" in Firebase Console<br>3. Check Console (F12) for errors</span>
-                    `;
-                    
-                    // Add a button to force offline mode
-                    const forceBtn = document.createElement('button');
-                    forceBtn.innerText = "FORCE OFFLINE MODE";
-                    forceBtn.className = "mt-4 bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded text-xs";
-                    forceBtn.onclick = () => {
-                         if (window.forceLocalMode) window.forceLocalMode("User Forced Offline");
-                         else {
-                            // Manual fallback if forceLocalMode isn't defined (script crashed)
-                            loader.classList.add('hidden');
-                            document.getElementById('lobbyScreen').classList.remove('hidden');
-                            document.getElementById('localModeWarning').classList.remove('hidden');
-                         }
-                    };
-                    statusP.appendChild(forceBtn);
-                }
-            }
-        }, 5000); // 5 Seconds Timeout
-    </script>
+        window.onload = () => {
+             // Set default battle mode on load
+             window.switchBattleMode('1v1');
+             initAuth();
+        };
 
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; }
-        h1, h2, h3, .fantasy-font { font-family: 'Cinzel', serif; }
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
-        .coin-container { perspective: 1000px; }
-        .coin { width: 140px; height: 140px; position: relative; transform-style: preserve-3d; transition: transform 1.5s cubic-bezier(0.4, 2.5, 0.55, 0.5); }
-        .coin div { width: 100%; height: 100%; position: absolute; backface-visibility: hidden; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold; box-shadow: 0 0 25px rgba(234, 179, 8, 0.6); border: 6px solid #fef08a; background-size: cover; }
-        .side-heads { background: radial-gradient(circle at 30% 30%, #fbbf24, #d97706); color: #451a03; text-shadow: 0 2px 0 rgba(255,255,255,0.4); }
-        .side-tails { background: radial-gradient(circle at 30% 30%, #94a3b8, #475569); transform: rotateY(180deg); color: #0f172a; text-shadow: 0 2px 0 rgba(255,255,255,0.4); }
-    </style>
+    </script>
 </head>
-<body class="min-h-screen bg-slate-900 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+<body class="p-4 md:p-8 min-h-screen">
+    <div id="loadingAuth" class="fixed inset-0 bg-slate-800/90 z-50 flex flex-col items-center justify-center hidden">
+        <i class="fa-solid fa-sync fa-spin text-yellow-500 text-6xl"></i>
+        <p id="loadingStatusMsg" class="mt-4 text-xl text-slate-300">Connecting to Realm...</p>
+        <p class="text-sm text-slate-500 mt-2">Checking Authentication Status...</p>
+    </div>
 
-    <!-- LOBBY SCREEN -->
-    <div id="lobbyScreen" class="fixed inset-0 z-50 bg-slate-900 flex flex-col items-center justify-center hidden">
-        <div class="bg-slate-800 p-8 rounded-xl border-2 border-yellow-500 shadow-2xl max-w-md w-full text-center">
-            
-            <!-- WARNING MESSAGE FOR LOCAL MODE / AUTH FAILURE -->
-            <div id="localModeWarning" class="hidden bg-red-900/50 text-red-300 p-3 rounded-lg mb-4 border border-red-700">
-                <i class="fa-solid fa-cloud-exclamation mr-2"></i> Sync Disabled (Running Offline) - User ID: <span id="currentUserId" class="font-mono text-xs"></span>
+    <!-- Lobby Screen -->
+    <div id="lobbyScreen" class="hidden max-w-lg mx-auto p-6 card rounded-xl mt-16 md:mt-24 shadow-2xl">
+        <h1 class="cinzel text-3xl font-bold text-center text-yellow-400 mb-6">Realm Architect</h1>
+        <p class="text-slate-400 text-center mb-6">Enter a Realm Code and your Player Name to join the multiplayer session.</p>
+        <div id="localModeWarning" class="bg-orange-700 p-3 rounded-lg text-sm mb-4 hidden">
+            <i class="fa-solid fa-triangle-exclamation mr-2"></i> Running in Offline Mode. No real-time synchronization.
+        </div>
+        <div class="space-y-4">
+            <div>
+                <label for="realmCodeInput" class="block text-sm font-medium text-slate-300 mb-1">Realm Code (e.g., ALPHA)</label>
+                <input type="text" id="realmCodeInput" value="CANVAS" class="w-full p-3 rounded-lg" placeholder="e.g. CANVAS">
             </div>
-            <!-- END WARNING -->
-
-            <i class="fa-solid fa-dragon text-yellow-500 text-6xl mb-4 animate-pulse"></i>
-            <h1 class="text-3xl font-bold text-white mb-2 fantasy-font">Realm Architect</h1>
-            <p class="text-slate-400 mb-6">Multiplayer Edition</p>
-
-            <input type="text" id="playerNameInput" placeholder="Enter Your Player Name" 
-                    class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-center text-lg mb-4 font-bold focus:ring-2 focus:ring-indigo-500 outline-none">
-            
-            <input type="text" id="realmCodeInput" placeholder="Enter Realm Name (e.g. WARZONE)" 
-                    class="w-full bg-slate-900 border border-slate-600 rounded-lg p-3 text-white text-center text-lg mb-4 uppercase font-bold tracking-widest focus:ring-2 focus:ring-yellow-500 outline-none">
-            
-            <button onclick="window.joinRealm()" class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded-lg transition-colors">
-                ENTER REALM
+            <div>
+                <label for="playerNameInput" class="block text-sm font-medium text-slate-300 mb-1">Your Player Name</label>
+                <input type="text" id="playerNameInput" class="w-full p-3 rounded-lg" placeholder="Your Name or Country Leader">
+            </div>
+            <button onclick="window.joinRealm()" class="btn-primary w-full p-3 rounded-lg shadow-md hover:shadow-xl">
+                <i class="fa-solid fa-dungeon mr-2"></i> Enter Realm
             </button>
         </div>
+        <p class="text-xs text-slate-500 mt-6 text-center">Your User ID: <span id="currentUserId" class="font-mono text-slate-400">Loading...</span></p>
     </div>
 
-    <!-- LOADING SCREEN -->
-    <div id="loadingAuth" class="fixed inset-0 z-50 bg-slate-900 flex items-center justify-center">
-        <div class="text-center">
-            <i class="fa-solid fa-circle-notch fa-spin text-indigo-500 text-4xl mb-4"></i>
-            <p id="loadingStatusMsg" class="text-slate-400">Connecting to the Aether...</p>
-        </div>
-    </div>
-
-    <!-- MAIN APP -->
-    <div id="appScreen" class="hidden min-h-[calc(100vh-3rem)]">
-        <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-40 shadow-lg">
-            <div class="container mx-auto px-4 py-4 flex justify-between items-center">
-                <div class="flex items-center gap-3">
-                    <i class="fa-solid fa-dragon text-yellow-500 text-2xl"></i>
-                    <div class="flex flex-col">
-                        <h1 class="text-xl font-bold text-yellow-500 fantasy-font">Realm Architect</h1>
-                        <span id="realmDisplay" class="text-xs text-green-400 font-mono">Connecting...</span>
-                    </div>
+    <!-- Main App Screen -->
+    <div id="appScreen" class="hidden">
+        <!-- Header -->
+        <header class="mb-6 pb-4 border-b border-slate-700 flex justify-between items-center flex-wrap">
+            <h1 class="cinzel text-2xl font-bold text-yellow-400" id="realmDisplay">Realm: ... | Player: ...</h1>
+            <div class="text-sm font-semibold flex items-center space-x-4 mt-2 md:mt-0">
+                <div class="p-2 card rounded-full shadow-lg">
+                    <span class="text-yellow-300"><i class="fa-solid fa-bolt mr-1"></i> Energy: <span id="myEnergyDisplay">10</span></span>
                 </div>
-                <div class="text-sm text-slate-400 hidden md:block">
-                    <i class="fa-solid fa-users mr-1"></i> Live Sync Active
+                <div class="p-2 card rounded-full shadow-lg">
+                    <span class="text-indigo-300"><i class="fa-solid fa-microchip mr-1"></i> Tech Level: <span id="myTechLevelDisplay">0</span></span>
                 </div>
             </div>
         </header>
 
-        <main class="container mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            <!-- Left Column: World Builder -->
-            <section class="lg:col-span-2 space-y-6">
-                <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-xl">
-                    <div class="flex items-center gap-2 mb-6 border-b border-slate-700 pb-4">
-                        <i class="fa-solid fa-globe text-indigo-400 text-xl"></i>
-                        <h2 class="text-xl font-bold text-white">World Base</h2>
-                    </div>
-
-                    <form id="worldForm" class="space-y-8">
-                        <div class="bg-slate-700/30 p-5 rounded-lg border border-slate-600/50">
-                            <h3 class="text-lg font-semibold text-indigo-300 mb-4">🌍 Geography & Resources</h3>
-                            <div class="grid md:grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-300 mb-2">Terrain</label>
-                                    <select id="terrain" class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm"><option>Mountainous Highlands</option><option>Dense Jungle / Rainforest</option><option>Arid Desert / Wasteland</option><option>Coastal Archipelago</option><option>Frozen Tundra</option><option>Rolling Plains</option><option>Subterranean Caves</option><option>Floating Islands</option></select>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-300 mb-2">Resources</label>
-                                    <select id="resources" onchange="checkCraftingOptions()" class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm"><option value="None">Scraps & Junk</option><option value="Metal">Precious Metals</option><option value="Wood">Rare Timber</option><option value="Oil">Oil & Fuel</option><option value="Mana">Magical Crystals</option><option value="Water">Abundant Water</option></select>
-                                </div>
-                                <div class="md:col-span-2">
-                                    <label class="block text-sm font-medium text-slate-300 mb-2">Climate</label>
-                                    <select id="climate" class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm"><option>Tropical</option><option>Temperate</option><option>Harsh Cold</option><option>Dry Hot</option><option>Volcanic</option><option>Magical Storms</option></select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="bg-slate-700/30 p-5 rounded-lg border border-slate-600/50">
-                            <h3 class="text-lg font-semibold text-pink-300 mb-4">📜 Lore & Details</h3>
-                            <div class="grid md:grid-cols-2 gap-4 mb-4">
-                                <div><label class="block text-sm text-slate-300 mb-1">Country Name</label><input type="text" id="countryName" class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm"></div>
-                                <div><label class="block text-sm text-slate-300 mb-1">Capital City</label><input type="text" id="capitalCity" class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm"></div>
-                                <div><label class="block text-sm text-slate-300 mb-1">Language</label><input type="text" id="language" class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm"></div>
-                                <div><label class="block text-sm text-slate-300 mb-1">Main Export</label><input type="text" id="export" class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm"></div>
-                            </div>
-                            <div class="space-y-4">
-                                <div class="relative group"><div class="flex justify-between items-end mb-1"><label class="block text-sm text-slate-300">Culture</label></div><textarea id="culture" rows="2" class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm"></textarea></div>
-                                <div class="relative group"><div class="flex justify-between items-end mb-1"><label class="block text-sm text-slate-300">History</label></div><textarea id="history" rows="2" class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm"></textarea></div>
-                                <div class="relative group"><div class="flex justify-between items-end mb-1"><label class="block text-sm text-slate-300">Unique Trait</label></div><textarea id="unique" rows="2" class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm"></textarea></div>
-                            </div>
-                        </div>
-
-                        <div class="bg-indigo-900/40 p-5 rounded-lg border border-indigo-500/50">
-                            <h3 class="text-lg font-bold text-white mb-2"><i class="fa-solid fa-floppy-disk mr-2"></i>Save Country to <span class="text-yellow-300" id="currentArchitectName">Player</span></h3>
-                            <button type="button" onclick="saveWorldToPlayer()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-md shadow-lg transition-colors">Save Realm Data</button>
-                            <p class="text-xs text-slate-400 mt-2">Saves the current form data to your synced player entry.</p>
-                            
-                            <div class="mt-4 p-3 bg-slate-900 rounded-lg">
-                                <h4 class="text-sm font-semibold text-white mb-1">My Saved World Data:</h4>
-                                <div id="worldDataPreview"></div>
-                            </div>
-                        </div>
-
-                        <!-- CRAFTING -->
-                        <div class="bg-slate-900/80 p-6 rounded-xl border-2 border-indigo-500/50 shadow-lg">
-                            <h3 class="text-xl font-bold text-indigo-300 mb-4 flex items-center gap-2"><i class="fa-solid fa-flask"></i> Research & Crafting</h3>
-                            <div class="grid md:grid-cols-2 gap-6">
-                                <div class="bg-slate-800/50 p-4 rounded-lg border border-slate-600">
-                                    <h4 class="text-white font-bold mb-2">Research Tech</h4>
-                                    <p class="text-xs text-slate-400 mb-2">Cost: 2 Energy</p>
-                                    <select id="researcherSelect" class="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600 mb-2"></select>
-                                    <button type="button" onclick="conductResearch()" class="w-full bg-indigo-700 hover:bg-indigo-600 text-white font-bold py-2 rounded text-sm">Research</button>
-                                </div>
-                                <div class="bg-slate-800/50 p-4 rounded-lg border border-slate-600">
-                                    <h4 class="text-white font-bold mb-2">Craft Weapon</h4>
-                                    <p class="text-xs text-slate-400 mb-2">Cost: 5 Energy | <span id="craftingStatus" class="text-yellow-500">Resource: None</span></p>
-                                    <select id="crafterSelect" class="w-full bg-slate-900 text-white text-sm p-2 rounded border border-slate-600 mb-2"></select>
-                                    <input type="text" id="schematicInput" placeholder="Weapon Name..." class="w-full bg-slate-900 border border-slate-600 rounded-md p-2 text-white text-sm mb-2">
-                                    <button type="button" onclick="craftItem()" class="w-full bg-red-800 hover:bg-red-700 text-white font-bold py-2 rounded text-sm">Craft</button>
-                                </div>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </section>
-
-            <!-- Right Column: Battle & Tracker -->
-            <aside class="space-y-6">
-                 <!-- Player Tracker -->
-                <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-xl">
-                    <div class="flex items-center gap-2 mb-4 border-b border-slate-700 pb-4">
-                        <i class="fa-solid fa-user-group text-green-400 text-xl"></i>
-                        <h2 class="text-xl font-bold text-white">Player Tracker</h2>
-                    </div>
-                    
-                    <div class="flex justify-between text-sm font-semibold mb-3 p-3 bg-slate-700 rounded-lg border border-green-500/50">
-                        <span>My Energy: <span id="myEnergyDisplay" class="text-yellow-400">10</span> ⚡</span>
-                        <span>My Tech Level: <span id="myTechLevelDisplay" class="text-indigo-400">0</span></span>
-                    </div>
-
-                    <ul id="playerList" class="space-y-2 max-h-60 overflow-y-auto">
-                        <!-- Player list will be rendered here -->
-                        <li class="text-slate-500 text-center text-sm">Loading Players...</li>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Column 1: World Creation & Stats -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- Player List -->
+                <div class="card p-4 rounded-xl">
+                    <h2 class="text-xl font-semibold mb-3 text-white"><i class="fa-solid fa-users mr-2 text-green-400"></i> Realm Architects (Ranked)</h2>
+                    <ul id="playerList" class="space-y-2 text-sm">
+                        <!-- Player list populated by JS -->
                     </ul>
                 </div>
-                
-                <!-- Battle Arena -->
-                <div class="bg-slate-800 rounded-xl p-1 border-2 border-yellow-600/50 shadow-2xl overflow-hidden">
-                    <div class="bg-slate-900 p-4 rounded-lg text-center">
-                        <h2 class="text-2xl font-bold text-yellow-500 fantasy-font mb-1"><i class="fa-solid fa-swords"></i> Battle Arena</h2>
-                        
-                        <!-- Mode Toggles -->
-                        <div class="flex justify-center gap-2 mb-4">
-                            <button onclick="switchBattleMode('1v1')" id="btn1v1" class="px-3 py-1 text-xs font-bold bg-yellow-600 text-white rounded">Solo Duel</button>
-                            <button onclick="switchBattleMode('2v2')" id="btn2v2" class="px-3 py-1 text-xs font-bold bg-slate-700 text-slate-300 rounded hover:bg-slate-600">Squad War</button>
-                        </div>
 
-                        <!-- 1v1 GUI -->
-                        <div id="battleGUI_1v1">
-                            <p class="text-[10px] text-slate-400 uppercase tracking-widest mb-4">1v1 - First to 10</p>
-                            <div class="flex justify-between items-center mb-6 gap-2">
-                                <div class="w-1/2">
-                                    <select id="p1Select" onchange="updateBattleOdds()" class="w-1/2 bg-indigo-900/30 border border-indigo-500/50 text-indigo-300 text-xs p-1 rounded font-bold"><option value="">P1</option></select>
-                                    <div class="text-2xl font-bold text-white mt-2" id="p1Score">0</div>
-                                </div>
-                                <div class="text-slate-500 font-bold">VS</div>
-                                <div class="w-1/2">
-                                    <select id="p2Select" onchange="updateBattleOdds()" class="w-1/2 bg-red-900/30 border border-red-500/50 text-red-300 text-xs p-1 rounded font-bold"><option value="">P2</option></select>
-                                    <div class="text-2xl font-bold text-white mt-2" id="p2Score">0</div>
-                                </div>
-                            </div>
-                            <div class="coin-container h-40 flex items-center justify-center mb-4">
-                                <div id="coin" class="coin">
-                                    <div class="side-heads border-indigo-500 text-indigo-900"><i class="fa-solid fa-user-astronaut"></i></div>
-                                    <div class="side-tails border-red-500 text-red-900"><i class="fa-solid fa-skull"></i></div>
-                                </div>
-                            </div>
-                            <div class="text-xs text-slate-400 mb-4" id="oddsDisplay">Odds: 50% vs 50%</div>
-                            <div id="battleResult" class="h-6 text-sm font-bold text-yellow-400 mb-2"></div>
-                            <button onclick="battleFlip()" id="battleBtn" class="w-full bg-gradient-to-r from-yellow-700 to-yellow-600 hover:from-yellow-600 text-white font-bold py-3 px-8 rounded-lg border-b-4 border-yellow-800 active:border-b-0 active:mt-1 transition-all uppercase tracking-wider">FIGHT!</button>
-                            <button onclick="resetBattle()" class="text-xs text-slate-500 mt-4 hover:text-white underline">Reset Score</button>
-                        </div>
-
-                        <!-- 2v2 GUI (Hidden by default) -->
-                        <div id="battleGUI_2v2" class="hidden">
-                            <p class="text-[10px] text-slate-400 uppercase tracking-widest mb-4">2v2 - First to 10</p>
-                            
-                            <!-- Team 1 -->
-                            <div class="bg-indigo-900/20 p-2 rounded mb-2 border border-indigo-500/30">
-                                <div class="text-xs text-indigo-400 font-bold mb-1">TEAM 1 (Blue)</div>
-                                <div class="flex gap-1">
-                                    <select id="t1p1Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option value="">P1</option></select>
-                                    <select id="t1p2Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option value="">P2</option></select>
-                                </div>
-                                <div class="text-2xl font-bold text-white mt-1" id="t1Score">0</div>
-                            </div>
-
-                            <div class="text-slate-500 font-bold my-1">VS</div>
-
-                            <!-- Team 2 -->
-                            <div class="bg-red-900/20 p-2 rounded mb-4 border border-red-500/30">
-                                <div class="text-xs text-red-400 font-bold mb-1">TEAM 2 (Red)</div>
-                                <div class="flex gap-1">
-                                    <select id="t2p1Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option value="">P3</option></select>
-                                    <select id="t2p2Select" onchange="updateDuoBattleOdds()" class="w-1/2 bg-slate-900 text-xs p-1 rounded"><option value="">P4</option></select>
-                                </div>
-                                <div class="text-2xl font-bold text-white mt-1" id="t2Score">0</div>
-                            </div>
-
-                             <div class="coin-container h-40 flex items-center justify-center mb-4">
-                                <div id="duoCoin" class="coin">
-                                    <div class="side-heads border-indigo-500 text-indigo-900"><i class="fa-solid fa-shield"></i></div>
-                                    <div class="side-tails border-red-500 text-red-900"><i class="fa-solid fa-explosion"></i></div>
-                                </div>
-                            </div>
-                            <div class="text-xs text-slate-400 mb-4" id="duoOddsDisplay">Odds: 50% vs 50%</div>
-                            <div id="duoBattleResult" class="h-6 text-sm font-bold text-yellow-400 mb-2"></div>
-
-                            <button onclick="duoBattleFlip()" id="duoBattleBtn" class="w-full bg-gradient-to-r from-yellow-700 to-yellow-600 hover:from-yellow-600 text-white font-bold py-3 px-8 rounded-lg border-b-4 border-yellow-800 active:border-b-0 active:mt-1 transition-all uppercase tracking-wider">INITIATE SQUAD WAR!</button>
-                            <button onclick="resetDuoBattle()" class="text-xs text-slate-500 mt-4 hover:text-white underline">Reset Score</button>
-                        </div>
+                <!-- Your World Data Preview -->
+                <div class="card p-4 rounded-xl">
+                    <h2 class="text-xl font-semibold mb-3 text-white"><i class="fa-solid fa-globe mr-2 text-sky-400"></i> Your Country: <span id="currentArchitectName" class="text-yellow-300"></span></h2>
+                    <div id="worldDataPreview" class="p-3 bg-slate-800/70 rounded-lg min-h-[100px] flex flex-col justify-center">
+                        <p class="text-xs text-slate-500 italic">No world data saved yet. Fill out the form below to create your country!</p>
                     </div>
                 </div>
-            </aside>
-        </main>
+
+                <!-- World Creation Form (Live Stats) -->
+                <div class="card p-4 rounded-xl">
+                    <h2 class="text-xl font-semibold mb-3 text-white">Design Your Realm</h2>
+                    <form id="worldForm" class="space-y-3">
+                        <!-- Row 1 -->
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400">Terrain</label>
+                                <select id="terrain" name="terrain" onchange="window.checkCraftingOptions()" class="w-full p-2 rounded-lg text-sm">
+                                    <option>Plains</option>
+                                    <option>Mountainous</option>
+                                    <option>Desert</option>
+                                    <option>Coastal</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400">Climate</label>
+                                <select id="climate" name="climate" class="w-full p-2 rounded-lg text-sm">
+                                    <option>Temperate</option>
+                                    <option>Arid</option>
+                                    <option>Tropical</option>
+                                    <option>Frigid</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400">Primary Resource</label>
+                                <select id="resources" name="resources" onchange="window.checkCraftingOptions()" class="w-full p-2 rounded-lg text-sm">
+                                    <option value="None">None</option>
+                                    <option>Iron Ore</option>
+                                    <option>Lumber</option>
+                                    <option>Exotic Spice</option>
+                                    <option>Rare Crystals</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Row 2 -->
+                        <div>
+                            <label for="countryName" class="block text-xs font-medium text-slate-400">Country Name</label>
+                            <input type="text" id="countryName" name="countryName" class="w-full p-2 rounded-lg text-sm" placeholder="The Sovereign State of...">
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label for="capitalCity" class="block text-xs font-medium text-slate-400">Capital City</label>
+                                <input type="text" id="capitalCity" name="capitalCity" class="w-full p-2 rounded-lg text-sm" placeholder="Capital">
+                            </div>
+                            <div>
+                                <label for="export" class="block text-xs font-medium text-slate-400">Main Export</label>
+                                <input type="text" id="export" name="export" class="w-full p-2 rounded-lg text-sm" placeholder="Export">
+                            </div>
+                        </div>
+
+                        <!-- Row 3 - Large Inputs -->
+                        <div>
+                            <label for="unique" class="block text-xs font-medium text-slate-400">Unique Trait / Short History</label>
+                            <textarea id="unique" name="unique" rows="3" class="w-full p-2 rounded-lg text-sm" placeholder="Describe a unique national trait or short history point..."></textarea>
+                        </div>
+                        
+                        <button type="button" onclick="window.saveWorldToPlayer()" class="btn-primary w-full p-3 rounded-lg mt-4">
+                            <i class="fa-solid fa-floppy-disk mr-2"></i> Realm Save Data
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Column 2: Actions & Utilities -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- Research & Crafting -->
+                <div class="card p-4 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Research Block -->
+                    <div>
+                        <h2 class="text-xl font-semibold mb-3 text-white border-b border-slate-600 pb-2"><i class="fa-solid fa-flask mr-2 text-indigo-400"></i> Research Lab (-2 Energy)</h2>
+                        <label for="researcherSelect" class="block text-sm font-medium text-slate-300 mb-1">Researcher</label>
+                        <select id="researcherSelect" onchange="window.updateSelects()" class="w-full p-2 rounded-lg text-sm mb-3"></select>
+                        <button onclick="window.conductResearch()" class="bg-indigo-600 text-white font-bold w-full p-3 rounded-lg shadow-md hover:bg-indigo-500 transition">
+                            <i class="fa-solid fa-arrow-up-right-dots mr-2"></i> Conduct Research (+1 Tech)
+                        </button>
+                    </div>
+
+                    <!-- Crafting Block -->
+                    <div>
+                        <h2 class="text-xl font-semibold mb-3 text-white border-b border-slate-600 pb-2"><i class="fa-solid fa-wrench mr-2 text-orange-400"></i> Crafting Workshop (-5 Energy)</h2>
+                        <label for="crafterSelect" class="block text-sm font-medium text-slate-300 mb-1">Crafter (Needs T3+)</label>
+                        <select id="crafterSelect" onchange="window.updateSelects()" class="w-full p-2 rounded-lg text-sm mb-3"></select>
+                        <label for="schematicInput" class="block text-sm font-medium text-slate-300 mb-1">Schematic Name</label>
+                        <input type="text" id="schematicInput" class="w-full p-2 rounded-lg text-sm mb-3" placeholder="e.g. Plasma Blaster">
+                        <p class="text-xs text-slate-500 mb-3"><i class="fa-solid fa-cube mr-1"></i> Required: 1 x <span id="craftingStatus" class="font-bold text-yellow-300">Resource: None</span></p>
+                        <button onclick="window.craftItem()" class="bg-orange-600 text-white font-bold w-full p-3 rounded-lg shadow-md hover:bg-orange-500 transition">
+                            <i class="fa-solid fa-hammer mr-2"></i> Craft Item
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Battle Simulator -->
+                <div class="card p-4 rounded-xl">
+                    <h2 class="text-xl font-semibold mb-3 text-white"><i class="fa-solid fa-fist-raised mr-2 text-red-400"></i> Battle Simulator</h2>
+                    <div class="flex space-x-2 mb-4">
+                        <button id="btn1v1" onclick="window.switchBattleMode('1v1')" class="flex-1 p-2 rounded-lg text-sm bg-yellow-600 text-white font-bold transition">1 vs 1</button>
+                        <button id="btn2v2" onclick="window.switchBattleMode('2v2')" class="flex-1 p-2 rounded-lg text-sm bg-slate-700 text-slate-300 transition">2 vs 2</button>
+                    </div>
+
+                    <!-- 1v1 GUI -->
+                    <div id="battleGUI_1v1" class="space-y-4">
+                        <div class="flex space-x-4">
+                            <div class="flex-1">
+                                <label for="p1Select" class="block text-sm font-medium text-slate-300 mb-1">Player 1 (P1)</label>
+                                <select id="p1Select" onchange="window.updateBattleOdds()" class="w-full p-2 rounded-lg text-sm"></select>
+                            </div>
+                            <div class="flex-1">
+                                <label for="p2Select" class="block text-sm font-medium text-slate-300 mb-1">Player 2 (P2)</label>
+                                <select id="p2Select" onchange="window.updateBattleOdds()" class="w-full p-2 rounded-lg text-sm"></select>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-center bg-slate-700 p-3 rounded-lg font-mono text-lg">
+                            <span id="p1Score" class="text-green-400">0</span>
+                            <span id="oddsDisplay" class="text-slate-400 text-sm">Odds: P1 (50%) vs P2 (50%)</span>
+                            <span id="p2Score" class="text-red-400">0</span>
+                        </div>
+
+                        <div id="coin" class="cursor-pointer" onclick="window.battleFlip()">
+                            <div class="coin-face front"><i class="fa-solid fa-crown text-3xl"></i></div>
+                            <div class="coin-face back"><i class="fa-solid fa-skull text-3xl"></i></div>
+                        </div>
+
+                        <p id="battleResult" class="text-center text-yellow-400 font-bold h-6"></p>
+
+                        <button onclick="window.resetBattle()" class="bg-slate-600 text-white w-full p-2 rounded-lg text-sm hover:bg-slate-500 transition">Reset Score</button>
+                    </div>
+                    
+                    <!-- 2v2 GUI -->
+                    <div id="battleGUI_2v2" class="space-y-4 hidden">
+                         <div class="grid grid-cols-2 gap-4">
+                            <!-- Team 1 (Blue) -->
+                            <div class="card p-3 rounded-lg border-2 border-blue-600 bg-blue-900/30">
+                                <h3 class="text-lg font-bold text-blue-300 mb-2">Team 1</h3>
+                                <select id="t1p1Select" onchange="window.updateDuoBattleOdds()" class="w-full p-2 rounded-lg text-sm mb-2"></select>
+                                <select id="t1p2Select" onchange="window.updateDuoBattleOdds()" class="w-full p-2 rounded-lg text-sm"></select>
+                            </div>
+                            <!-- Team 2 (Red) -->
+                            <div class="card p-3 rounded-lg border-2 border-red-600 bg-red-900/30">
+                                <h3 class="text-lg font-bold text-red-300 mb-2">Team 2</h3>
+                                <select id="t2p1Select" onchange="window.updateDuoBattleOdds()" class="w-full p-2 rounded-lg text-sm mb-2"></select>
+                                <select id="t2p2Select" onchange="window.updateDuoBattleOdds()" class="w-full p-2 rounded-lg text-sm"></select>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-center bg-slate-700 p-3 rounded-lg font-mono text-lg">
+                            <span id="t1Score" class="text-blue-400">0</span>
+                            <span id="duoOddsDisplay" class="text-slate-400 text-sm">Odds: Team 1 (50%) vs Team 2 (50%)</span>
+                            <span id="t2Score" class="text-red-400">0</span>
+                        </div>
+
+                        <div id="duoCoin" class="cursor-pointer" onclick="window.duoBattleFlip()">
+                            <div class="coin-face front bg-blue-600">T1</div>
+                            <div class="coin-face back bg-red-600">T2</div>
+                        </div>
+                        
+                        <p id="duoBattleResult" class="text-center text-yellow-400 font-bold h-6"></p>
+
+                        <button onclick="window.resetDuoBattle()" class="bg-slate-600 text-white w-full p-2 rounded-lg text-sm hover:bg-slate-500 transition">Reset Score</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </body>
 </html>
