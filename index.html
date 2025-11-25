@@ -429,11 +429,24 @@
                 setLogLevel('error');
                 console.log("Firebase App Initialized.");
 
+                let authSuccess = false;
+
+                // Try Custom Token first (if available)
                 if (typeof window.__initial_auth_token !== 'undefined' && window.__initial_auth_token.length > 0) {
-                    await signInWithCustomToken(auth, window.__initial_auth_token);
-                } else {
-                    // Try anonymous sign in
-                    await signInAnonymously(auth);
+                    try {
+                        console.log("Attempting Custom Token Auth...");
+                        await signInWithCustomToken(auth, window.__initial_auth_token);
+                        authSuccess = true;
+                    } catch (e) {
+                         // This is the critical fix: If custom token fails (mismatch config), log warn and fall through
+                        console.warn("Custom token auth failed (likely environment mismatch). Falling back to Anonymous.", e);
+                    }
+                }
+
+                // Fallback to Anonymous Auth if custom token failed or wasn't present
+                if (!authSuccess) {
+                     console.log("Attempting Anonymous Auth...");
+                     await signInAnonymously(auth);
                 }
 
                 onAuthStateChanged(auth, (user) => {
